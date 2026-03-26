@@ -117,7 +117,6 @@ export default function SearchPanel({ onNavigate, onClose }: Props) {
             className="search-result"
             onClick={() => {
               onNavigate(r.channel_id, r.id)
-              onClose()
             }}
           >
             <div className="search-result-header">

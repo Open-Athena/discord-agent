@@ -81,21 +81,35 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
     setHasOlder(true)
     setInitialScrollDone(false)
 
-    let promise: Promise<MessageType[]>
     if (targetMessageId) {
-      // Fetch messages centered around the target
-      promise = fetchMessagesAround(channelId, targetMessageId, PAGE_SIZE)
+      // Fetch messages around the target AND the newest messages, merge them
+      // so there's always enough content below the target for scrolling
+      Promise.all([
+        fetchMessagesAround(channelId, targetMessageId, PAGE_SIZE),
+        fetchMessages(channelId, { limit: PAGE_SIZE }),
+      ]).then(([around, newest]) => {
+        // Merge, deduplicate by ID, sort chronologically
+        const seen = new Set<string>()
+        const merged: MessageType[] = []
+        for (const msg of [...around, ...newest]) {
+          if (!seen.has(msg.id)) {
+            seen.add(msg.id)
+            merged.push(msg)
+          }
+        }
+        merged.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        setMessages(merged)
+        setHasOlder(merged.length >= PAGE_SIZE)
+      }).finally(() => setLoading(false))
     } else {
       const prefetched = getPrefetched(channelId)
-      promise = prefetched || fetchMessages(channelId, { limit: PAGE_SIZE })
+      const promise = prefetched || fetchMessages(channelId, { limit: PAGE_SIZE })
+      promise.then(msgs => {
+        const sorted = [...msgs].reverse()
+        setMessages(sorted)
+        setHasOlder(msgs.length >= PAGE_SIZE)
+      }).finally(() => setLoading(false))
     }
-
-    promise.then(msgs => {
-      // API returns newest-first, reverse to chronological
-      const sorted = [...msgs].reverse()
-      setMessages(sorted)
-      setHasOlder(msgs.length >= PAGE_SIZE)
-    }).finally(() => setLoading(false))
   }, [channelId])
 
   const rows = buildRows(messages)
@@ -106,10 +120,47 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
     estimateSize: (index) => {
       const row = rows[index]
       if (row.type === 'date') return 40
-      return row.compact ? 24 : 70
+      if (row.compact) return 24
+      const msg = row.message
+      let h = 70
+      if (msg?.attachments?.some(a => a.content_type?.startsWith('image/'))) h += 320
+      if (msg?.embeds?.length) h += 120
+      return h
     },
     overscan: 20,
   })
+
+  const targetIndexRef = useRef<number | null>(null)
+
+  function scrollToTarget(idx: number) {
+    const scrollEl = parentRef.current
+    if (!scrollEl) return
+    // First, scroll the target into view so the virtualizer measures it
+    virtualizer.scrollToIndex(idx, { align: 'start' })
+    // Then adjust: position at ~30vh from top, or scroll to bottom if near end
+    requestAnimationFrame(() => {
+      const targetItem = virtualizer.getVirtualItems().find(v => v.index === idx)
+      if (!targetItem) return
+      const viewportH = scrollEl.clientHeight
+      const desiredOffset = targetItem.start - viewportH * 0.3
+      const maxScroll = scrollEl.scrollHeight - viewportH
+      if (maxScroll - desiredOffset < 50) {
+        // Target is near the end — scroll to absolute bottom
+        scrollEl.scrollTop = maxScroll
+      } else {
+        scrollEl.scrollTop = Math.max(0, desiredOffset)
+      }
+    })
+  }
+
+  function highlightTarget() {
+    if (!targetMessageId) return
+    const el = parentRef.current?.querySelector(`[data-message-id="${targetMessageId}"]`)
+    if (el) {
+      el.classList.add('highlight')
+      setTimeout(() => el.classList.remove('highlight'), 3000)
+    }
+  }
 
   // Scroll to bottom on initial load, or to target message
   useEffect(() => {
@@ -118,17 +169,10 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
     if (targetMessageId) {
       const idx = rows.findIndex(r => r.key === targetMessageId)
       if (idx >= 0) {
-        virtualizer.scrollToIndex(idx, { align: 'center' })
+        targetIndexRef.current = idx
+        scrollToTarget(idx)
         setInitialScrollDone(true)
-
-        // Highlight the target message briefly
-        setTimeout(() => {
-          const el = parentRef.current?.querySelector(`[data-message-id="${targetMessageId}"]`)
-          if (el) {
-            el.classList.add('highlight')
-            setTimeout(() => el.classList.remove('highlight'), 2000)
-          }
-        }, 100)
+        setTimeout(highlightTarget, 200)
         return
       }
     }
@@ -137,6 +181,33 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
     virtualizer.scrollToIndex(rows.length - 1, { align: 'end' })
     setInitialScrollDone(true)
   }, [loading, messages.length, initialScrollDone, targetMessageId, rows, virtualizer])
+
+  // Re-scroll to target when images load and change row heights
+  useEffect(() => {
+    if (targetIndexRef.current === null) return
+    const el = parentRef.current
+    if (!el) return
+
+    const idx = targetIndexRef.current
+    let rescrollCount = 0
+
+    function onImgLoad() {
+      if (rescrollCount++ < 10) {
+        scrollToTarget(idx)
+      }
+    }
+
+    el.addEventListener('load', onImgLoad, { capture: true })
+    const timers = [
+      setTimeout(() => scrollToTarget(idx), 300),
+      setTimeout(() => scrollToTarget(idx), 800),
+      setTimeout(() => { targetIndexRef.current = null }, 3000),
+    ]
+    return () => {
+      el.removeEventListener('load', onImgLoad, { capture: true })
+      timers.forEach(clearTimeout)
+    }
+  }, [initialScrollDone, virtualizer])
 
   // Infinite scroll: load older messages when scrolling near the top
   const loadOlder = useCallback(() => {
@@ -216,6 +287,7 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
                 <MessageComponent
                   message={row.message!}
                   compact={row.compact!}
+                  targeted={row.key === targetMessageId}
                   onNavigate={onNavigate}
                 />
               )}

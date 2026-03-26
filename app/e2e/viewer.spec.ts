@@ -224,6 +224,9 @@ test.describe('Scroll behavior', () => {
 
     // The target message should be visible
     await page.locator('.message').first().waitFor({ timeout: 5000 })
+
+    // Search panel should stay open
+    await expect(page.locator('.search-panel')).toBeVisible()
   })
 })
 
@@ -389,5 +392,108 @@ test.describe('URL routing', () => {
 
     const targetEl = page.locator(`[data-message-id="${target.id}"]`)
     await expect(targetEl).toBeVisible({ timeout: 5000 })
+  })
+
+  test('targeted message near end of channel is still visible', async ({ page }) => {
+    // Find a small channel and target its 2nd-to-last message
+    const res = await page.request.get('/api/channels')
+    const channels = await res.json()
+    // data-e2e-transform has 52 messages — good test case
+    const ch = channels.find((c: { name: string }) => c.name === 'data-e2e-transform') || channels[0]
+
+    const msgRes = await page.request.get(`/api/channels/${ch.id}/messages?limit=5`)
+    const msgs = await msgRes.json()
+    // 2nd to last (msgs are newest-first, so index 1 is 2nd newest)
+    const target = msgs[1]
+
+    await page.goto(`/#${ch.id}/${target.id}`)
+    await page.locator('.message').first().waitFor({ timeout: 5000 })
+    await page.waitForTimeout(1500)
+
+    const targetEl = page.locator(`[data-message-id="${target.id}"]`)
+    await expect(targetEl).toBeVisible({ timeout: 5000 })
+  })
+
+  test('targeted message has persistent highlight', async ({ page }) => {
+    const res = await page.request.get('/api/channels')
+    const channels = await res.json()
+    const general = channels.find((c: { name: string }) => c.name === 'general')
+
+    const msgRes = await page.request.get(`/api/channels/${general.id}/messages?limit=50`)
+    const msgs = await msgRes.json()
+    const target = msgs[Math.floor(msgs.length / 2)]
+
+    await page.goto(`/#${general.id}/${target.id}`)
+    await page.locator('.message').first().waitFor({ timeout: 5000 })
+    await page.waitForTimeout(500)
+
+    const targetEl = page.locator(`[data-message-id="${target.id}"]`)
+    await expect(targetEl).toBeVisible()
+    // Should have the 'targeted' class for persistent highlight
+    await expect(targetEl).toHaveClass(/targeted/)
+  })
+
+  test('active channel is scrolled into view in sidebar', async ({ page }) => {
+    const res = await page.request.get('/api/channels')
+    const channels = await res.json()
+    // Pick a channel that would be below the fold (e.g. 'zephyr' near bottom alphabetically)
+    const ch = channels.find((c: { name: string }) => c.name === 'zephyr') || channels[channels.length - 1]
+
+    await page.goto(`/#${ch.id}`)
+    await page.locator('.message').first().waitFor({ timeout: 5000 })
+    await page.waitForTimeout(500)
+
+    const activeItem = page.locator('.channel-item.active')
+    await expect(activeItem).toBeVisible()
+    // Verify it's actually in the viewport of the sidebar
+    const isInView = await activeItem.evaluate(el => {
+      const rect = el.getBoundingClientRect()
+      const parent = el.closest('.channel-list')
+      if (!parent) return false
+      const parentRect = parent.getBoundingClientRect()
+      return rect.top >= parentRect.top && rect.bottom <= parentRect.bottom
+    })
+    expect(isInView).toBe(true)
+  })
+
+  test('data-e2e-transform 2nd-to-last message scrolls to channel bottom', async ({ page }) => {
+    // This is the specific bug case: target 1483900119001731224 in channel 1462896888000024711
+    await page.goto('/#1462896888000024711/1483900119001731224')
+    await page.locator('.message').first().waitFor({ timeout: 5000 })
+    await page.waitForTimeout(1500)
+
+    const targetEl = page.locator('[data-message-id="1483900119001731224"]')
+    await expect(targetEl).toBeVisible({ timeout: 5000 })
+
+    // The scroll container should be at or very near the bottom
+    // since the target is 2nd-to-last message
+    const scrollInfo = await page.evaluate(() => {
+      const el = document.querySelector('.message-list-scroll')
+      if (!el) return null
+      return {
+        scrollTop: el.scrollTop,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+      }
+    })
+    expect(scrollInfo).not.toBeNull()
+    const distFromBottom = scrollInfo!.scrollHeight - scrollInfo!.scrollTop - scrollInfo!.clientHeight
+    // Should be within 100px of bottom
+    expect(distFromBottom).toBeLessThan(100)
+  })
+
+  test('search result click scrolls to message and keeps search open', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('.channel-item').first().waitFor()
+    await page.locator('.search-toggle').click()
+
+    await page.locator('.search-input').fill('levanter')
+    await page.locator('.search-result').first().waitFor({ timeout: 5000 })
+    await page.locator('.search-result').first().click()
+
+    await expect(page).toHaveURL(/#\d+\/\d+/, { timeout: 3000 })
+    await page.locator('.message').first().waitFor({ timeout: 5000 })
+    // Search panel stays open
+    await expect(page.locator('.search-panel')).toBeVisible()
   })
 })

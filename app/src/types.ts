@@ -30,6 +30,8 @@ export interface Embed {
   description: string | null
   url: string | null
   thumbnail_url: string | null
+  thumbnail_width: number | null
+  thumbnail_height: number | null
   image_url: string | null
 }
 

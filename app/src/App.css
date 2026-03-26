@@ -230,8 +230,17 @@
   background: rgba(0, 0, 0, 0.06);
 }
 
+.message.targeted {
+  background: rgba(88, 101, 242, 0.1);
+  border-left: 3px solid var(--accent);
+}
 .message.highlight {
-  background: var(--bg-highlight);
+  animation: msg-highlight 3s ease-out;
+}
+@keyframes msg-highlight {
+  0% { background: rgba(88, 101, 242, 0.3); }
+  30% { background: rgba(88, 101, 242, 0.2); }
+  100% { background: rgba(88, 101, 242, 0.1); }
 }
 
 .message.system-message {

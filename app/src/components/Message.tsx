@@ -156,10 +156,11 @@ function ReplySnippet({ messageId }: ReplySnippetProps) {
 interface Props {
   message: MessageType
   compact: boolean
+  targeted?: boolean
   onNavigate?: (channelId: string, messageId: string) => void
 }
 
-export default function MessageComponent({ message, compact, onNavigate }: Props) {
+export default function MessageComponent({ message, compact, targeted, onNavigate }: Props) {
   const lookup = useLookup()
 
   if (isSystemMessage(message.type)) {
@@ -176,7 +177,7 @@ export default function MessageComponent({ message, compact, onNavigate }: Props
   const permalink = `#${message.channel_id}/${message.id}`
 
   return (
-    <div className={`message${compact ? ' compact' : ''}`} data-message-id={message.id}>
+    <div className={`message${compact ? ' compact' : ''}${targeted ? ' targeted' : ''}`} data-message-id={message.id}>
       {message.reference_message_id && (
         <ReplySnippet messageId={message.reference_message_id} />
       )}
@@ -204,16 +205,20 @@ export default function MessageComponent({ message, compact, onNavigate }: Props
             <div className="attachments">
               {message.attachments.map(att => {
                 if (att.content_type?.startsWith('image/')) {
+                  // Calculate display dimensions preserving aspect ratio
+                  const maxW = 400, maxH = 300
+                  let w = att.width || maxW, h = att.height || maxH
+                  if (w > maxW) { h = Math.round(h * maxW / w); w = maxW }
+                  if (h > maxH) { w = Math.round(w * maxH / h); h = maxH }
                   return (
                     <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer">
                       <img
                         className="attachment-image"
                         src={att.url}
                         alt={att.filename}
-                        style={{
-                          maxWidth: Math.min(att.width || 400, 400),
-                          maxHeight: 300,
-                        }}
+                        width={w}
+                        height={h}
+                        loading="lazy"
                       />
                     </a>
                   )
@@ -241,16 +246,26 @@ export default function MessageComponent({ message, compact, onNavigate }: Props
                   {embed.description && (
                     <div className="embed-description">{embed.description}</div>
                   )}
-                  {embed.thumbnail_url && (
-                    embed.url
-                      ? <a href={embed.url} target="_blank" rel="noopener noreferrer"><img className="embed-thumbnail" src={embed.thumbnail_url} alt="" /></a>
-                      : <img className="embed-thumbnail" src={embed.thumbnail_url} alt="" />
-                  )}
-                  {embed.image_url && (
-                    embed.url
-                      ? <a href={embed.url} target="_blank" rel="noopener noreferrer"><img className="embed-image" src={embed.image_url} alt="" /></a>
-                      : <img className="embed-image" src={embed.image_url} alt="" />
-                  )}
+                  {embed.thumbnail_url && (() => {
+                    // Reserve space: constrain to max 80x80 for thumbnails
+                    const tw = Math.min(embed.thumbnail_width || 80, 80)
+                    const th = Math.min(embed.thumbnail_height || 80, 80)
+                    const img = <img className="embed-thumbnail" src={embed.thumbnail_url} alt="" width={tw} height={th} loading="lazy" />
+                    return embed.url
+                      ? <a href={embed.url} target="_blank" rel="noopener noreferrer">{img}</a>
+                      : img
+                  })()}
+                  {embed.image_url && (() => {
+                    // Reserve space for embed images
+                    const maxW = 400, maxH = 300
+                    let w = embed.thumbnail_width || maxW, h = embed.thumbnail_height || maxH
+                    if (w > maxW) { h = Math.round(h * maxW / w); w = maxW }
+                    if (h > maxH) { w = Math.round(w * maxH / h); h = maxH }
+                    const img = <img className="embed-image" src={embed.image_url} alt="" width={w} height={h} loading="lazy" />
+                    return embed.url
+                      ? <a href={embed.url} target="_blank" rel="noopener noreferrer">{img}</a>
+                      : img
+                  })()}
                 </div>
               ))}
             </div>

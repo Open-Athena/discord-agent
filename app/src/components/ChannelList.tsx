@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Channel } from '../types'
 import { prefetchMessages } from '../api'
 
@@ -8,6 +9,13 @@ interface Props {
 }
 
 export default function ChannelList({ channels, activeChannelId, onSelectChannel }: Props) {
+  const activeRef = useRef<HTMLDivElement>(null)
+
+  // Scroll active channel into view
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [activeChannelId])
+
   if (!channels.length) return <div className="channel-list-loading">Loading channels...</div>
 
   return (
@@ -15,6 +23,7 @@ export default function ChannelList({ channels, activeChannelId, onSelectChannel
       {channels.map(ch => (
         <div
           key={ch.id}
+          ref={ch.id === activeChannelId ? activeRef : undefined}
           className={`channel-item${ch.id === activeChannelId ? ' active' : ''}`}
           onClick={() => onSelectChannel(ch)}
           onMouseEnter={() => prefetchMessages(ch.id)}
