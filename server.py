@@ -213,6 +213,14 @@ async def search_messages(request: Request):
     """
 
     if is_channel_search:
+        if not name_query:
+            # Bare "#" — return recent messages containing any channel mention
+            rows = db.execute(
+                f"{base_select} WHERE m.content LIKE '%<#%>%' ORDER BY m.timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            db.close()
+            return JSONResponse([dict(r) for r in rows])
         # #channel: only find messages that mention matching channels
         matching_ids = [
             row["id"] for row in

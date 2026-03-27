@@ -202,6 +202,13 @@ async function searchMessages(db: D1Database, url: URL): Promise<unknown[]> {
 	`
 
 	if (isChannelSearch) {
+		if (!nameQuery) {
+			// Bare "#" — return recent messages containing any channel mention
+			const { results } = await db.prepare(
+				`${baseSelect} WHERE m.content LIKE '%<#%>%' ORDER BY m.timestamp DESC LIMIT ?1`
+			).bind(limit).all()
+			return results
+		}
 		const { results: matchingChannels } = await db.prepare(
 			"SELECT id FROM channels WHERE name LIKE ?1"
 		).bind(qLike).all()
@@ -216,6 +223,13 @@ async function searchMessages(db: D1Database, url: URL): Promise<unknown[]> {
 	}
 
 	if (isUserSearch) {
+		if (!nameQuery) {
+			// Bare "@" — return recent messages containing any user mention
+			const { results } = await db.prepare(
+				`${baseSelect} WHERE m.content LIKE '%<@%>%' ORDER BY m.timestamp DESC LIMIT ?1`
+			).bind(limit).all()
+			return results
+		}
 		const { results: matchingUsers } = await db.prepare(
 			"SELECT id FROM users WHERE username LIKE ?1 OR global_name LIKE ?1"
 		).bind(qLike).all()
