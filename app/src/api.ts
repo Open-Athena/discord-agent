@@ -1,6 +1,6 @@
 import type { Channel, Message, SearchResult, User } from './types'
 
-const BASE = '/api'
+const BASE = (import.meta.env.VITE_API_BASE || '') + '/api'
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
