@@ -65,35 +65,29 @@ interface Props {
 
 export default function MessageList({ channelId, targetMessageId, onNavigate }: Props) {
   const { data: messages = [], isLoading } = useMessages(channelId, targetMessageId)
-  const [allMessages, setAllMessages] = useState<MessageType[]>([])
+  const [olderMessages, setOlderMessages] = useState<MessageType[]>([])
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [hasOlder, setHasOlder] = useState(true)
   const [initialScrollDone, setInitialScrollDone] = useState(false)
   const parentRef = useRef<HTMLDivElement>(null)
   const targetIndexRef = useRef<number | null>(null)
 
-  // Sync query data into allMessages, prepending any previously loaded older messages
+  // Reset older messages when channel changes
   useEffect(() => {
-    if (messages.length > 0) {
-      setAllMessages(prev => {
-        if (prev.length === 0) return messages
-        // Merge: keep older messages that aren't in the new set
-        const newIds = new Set(messages.map(m => m.id))
-        const older = prev.filter(m => !newIds.has(m.id))
-        const merged = [...older, ...messages]
-        merged.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        return merged
-      })
-      setHasOlder(messages.length >= PAGE_SIZE)
-    }
-  }, [messages])
-
-  // Reset when channel changes
-  useEffect(() => {
-    setAllMessages([])
+    setOlderMessages([])
     setInitialScrollDone(false)
-    setHasOlder(true)
-  }, [channelId, targetMessageId])
+    setHasOlder(messages.length >= PAGE_SIZE)
+  }, [channelId, targetMessageId, messages.length])
+
+  // Merge query data with any older messages loaded via infinite scroll
+  const allMessages = (() => {
+    if (olderMessages.length === 0) return messages
+    const seen = new Set(messages.map(m => m.id))
+    const unique = olderMessages.filter(m => !seen.has(m.id))
+    const merged = [...unique, ...messages]
+    merged.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    return merged
+  })()
 
   const rows = buildRows(allMessages)
 
@@ -197,7 +191,7 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
       if (older.length < PAGE_SIZE) setHasOlder(false)
       if (older.length > 0) {
         const sorted = [...older].reverse()
-        setAllMessages(prev => [...sorted, ...prev])
+        setOlderMessages(prev => [...sorted, ...prev])
       }
     }).finally(() => setLoadingOlder(false))
   }, [channelId, loadingOlder, hasOlder, allMessages])
