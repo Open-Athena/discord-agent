@@ -84,10 +84,27 @@ export function useSearch(query: string) {
 
 export function usePrefetchMessages() {
   const queryClient = useQueryClient()
-  return (channelId: string) => {
+  return (channelId: string, targetMessageId?: string) => {
+    const key = targetMessageId || 'latest'
     queryClient.prefetchQuery({
-      queryKey: ['messages', channelId, 'latest'],
+      queryKey: ['messages', channelId, key],
       queryFn: async () => {
+        if (targetMessageId) {
+          const [around, newest] = await Promise.all([
+            fetchMessagesAround(channelId, targetMessageId, 50),
+            fetchMessages(channelId, { limit: 50 }),
+          ])
+          const seen = new Set<string>()
+          const merged: Message[] = []
+          for (const msg of [...around, ...newest]) {
+            if (!seen.has(msg.id)) {
+              seen.add(msg.id)
+              merged.push(msg)
+            }
+          }
+          merged.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          return merged
+        }
         const msgs = await fetchMessages(channelId, { limit: 50 })
         return [...msgs].reverse()
       },

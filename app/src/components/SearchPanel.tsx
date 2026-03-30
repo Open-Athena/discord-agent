@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode, type RefObject } from 'react'
-import { useSearch } from '../hooks'
+import { useSearch, usePrefetchMessages } from '../hooks'
 import { useLookup } from '../context'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
 
 export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose }: Props) {
   const lookup = useLookup()
+  const prefetch = usePrefetchMessages()
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const internalRef = useRef<HTMLInputElement>(null)
@@ -26,6 +27,31 @@ export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose
   }, [query])
 
   const { data: results = [], isLoading } = useSearch(debouncedQuery)
+  const [selectedIdx, setSelectedIdx] = useState(-1)
+
+  // Reset selection when query changes
+  useEffect(() => { setSelectedIdx(-1) }, [query])
+
+  // Autocomplete suggestions for #channel and @user
+  const suggestions = (() => {
+    const q = query.trim()
+    if (q.startsWith('#')) {
+      const name = q.slice(1).toLowerCase()
+      return [...lookup.channels.values()]
+        .filter(c => c.type !== 11 && c.name.toLowerCase().includes(name))
+        .sort((a, b) => b.message_count - a.message_count)
+        .slice(0, 10)
+        .map(c => ({ type: 'channel' as const, id: c.id, label: `#${c.name}`, count: c.message_count }))
+    }
+    if (q.startsWith('@')) {
+      const name = q.slice(1).toLowerCase()
+      return [...lookup.users.values()]
+        .filter(u => (u.global_name || u.username).toLowerCase().includes(name))
+        .slice(0, 10)
+        .map(u => ({ type: 'user' as const, id: u.id, label: `@${u.global_name || u.username}`, count: 0 }))
+    }
+    return []
+  })()
 
   function snippetAround(text: string, q: string, maxLen: number): string {
     if (text.length <= maxLen) return text
@@ -85,20 +111,71 @@ export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose
           placeholder="Search messages..."
           value={query}
           onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+          onKeyDown={e => {
+            if (e.key === 'Escape') { onClose(); return }
+            const totalItems = suggestions.length + results.length
+            if (totalItems > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setSelectedIdx(i => Math.min(i + 1, totalItems - 1))
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setSelectedIdx(i => Math.max(i - 1, -1))
+                return
+              }
+              if (e.key === 'Enter' && selectedIdx >= 0) {
+                e.preventDefault()
+                if (selectedIdx < suggestions.length) {
+                  const s = suggestions[selectedIdx]
+                  if (s.type === 'channel') location.hash = s.id
+                  else setQuery(`@${s.label.slice(1)}`)
+                } else {
+                  const r = results[selectedIdx - suggestions.length]
+                  if (r) onNavigate(r.channel_id, r.id)
+                }
+                return
+              }
+            }
+          }}
         />
         <button className="search-close" onClick={onClose}>X</button>
       </div>
       <div className="search-results">
+        {suggestions.length > 0 && (
+          <div className="search-suggestions">
+            {suggestions.map((s, i) => (
+              <div
+                key={s.id}
+                className={`search-suggestion${i === selectedIdx ? ' selected' : ''}`}
+                onClick={() => {
+                  if (s.type === 'channel') {
+                    location.hash = s.id
+                  } else {
+                    setQuery(`@${s.label.slice(1)}`)
+                  }
+                }}
+                onMouseEnter={() => {
+                  if (s.type === 'channel') prefetch(s.id)
+                }}
+              >
+                <span className="search-suggestion-label">{s.label}</span>
+                {s.count > 0 && <span className="search-suggestion-count">{s.count.toLocaleString()}</span>}
+              </div>
+            ))}
+          </div>
+        )}
         {isLoading && <div className="search-loading">Searching...</div>}
-        {!isLoading && debouncedQuery && results.length === 0 && (
+        {!isLoading && debouncedQuery && results.length === 0 && suggestions.length === 0 && (
           <div className="search-empty">No results found</div>
         )}
-        {results.map(r => (
+        {results.map((r, i) => (
           <div
             key={r.id}
-            className="search-result"
+            className={`search-result${i + suggestions.length === selectedIdx ? ' selected' : ''}`}
             onClick={() => onNavigate(r.channel_id, r.id)}
+            onMouseEnter={() => prefetch(r.channel_id, r.id)}
           >
             <div className="search-result-header">
               <img

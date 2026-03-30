@@ -670,6 +670,31 @@
   font-size: 14px;
 }
 
+.search-suggestions {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+.search-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-link);
+  font-weight: 500;
+}
+.search-suggestion:hover,
+.search-suggestion.selected {
+  background: var(--bg-hover);
+}
+.search-suggestion-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 .search-result {
   padding: 8px 12px;
   border-radius: 4px;
@@ -677,7 +702,8 @@
   margin-bottom: 4px;
 }
 
-.search-result:hover {
+.search-result:hover,
+.search-result.selected {
   background: var(--bg-hover);
 }
 

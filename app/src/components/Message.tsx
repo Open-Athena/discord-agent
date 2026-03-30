@@ -2,7 +2,7 @@ import { type ReactNode } from 'react'
 import type { Message as MessageType } from '../types'
 import type { LookupData } from '../context'
 import { useLookup } from '../context'
-import { useMessage } from '../hooks'
+import { useMessage, usePrefetchMessages } from '../hooks'
 import Tooltip from './Tooltip'
 
 function avatarUrl(authorId: string, avatar: string | null): string {
@@ -18,7 +18,7 @@ function formatTimestamp(ts: string): string {
     + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
-function renderContent(content: string, lookup: LookupData): ReactNode[] {
+function renderContent(content: string, lookup: LookupData, onPrefetchChannel?: (channelId: string) => void): ReactNode[] {
   if (!content) return []
 
   const parts: ReactNode[] = []
@@ -89,7 +89,7 @@ function renderInline(text: string, keyOffset: number, lookup: LookupData): Reac
       const chId = match[15]
       const ch = lookup.channels.get(chId)
       const chName = ch ? ch.name : 'unknown-channel'
-      parts.push(<span key={`ch-${key++}`} className="mention" onClick={() => { location.hash = chId }}>#{chName}</span>)
+      parts.push(<span key={`ch-${key++}`} className="mention" onClick={() => { location.hash = chId }} onMouseEnter={() => onPrefetchChannel?.(chId)}>#{chName}</span>)
     } else if (match[16]) {
       // user mention <@id> or <@!id>
       const user = lookup.users.get(match[17])
@@ -158,6 +158,7 @@ interface Props {
 
 export default function MessageComponent({ message, compact, targeted, onNavigate }: Props) {
   const lookup = useLookup()
+  const prefetch = usePrefetchMessages()
 
   if (isSystemMessage(message.type)) {
     return (
@@ -195,7 +196,7 @@ export default function MessageComponent({ message, compact, targeted, onNavigat
               {message.edited_timestamp && <span className="edited">(edited)</span>}
             </div>
           )}
-          <div className="message-text">{renderContent(message.content, lookup)}</div>
+          <div className="message-text">{renderContent(message.content, lookup, (chId) => prefetch(chId))}</div>
 
           {message.attachments.length > 0 && (
             <div className="attachments">
