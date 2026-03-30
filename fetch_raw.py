@@ -14,7 +14,7 @@ async def main():
 
     headers = {
         "Authorization": f"Bot {token}",
-        "User-Agent": "DiscordBot (https://github.com/marin-community/marin, 0.1)",
+        "User-Agent": "DiscordBot (https://github.com/Open-Athena/discord-agent, 0.1)",
     }
     base = "https://discord.com/api/v10"
 
@@ -26,7 +26,7 @@ async def main():
 
         async with session.get(f"{base}/guilds/{guild_id}/channels") as r:
             channels = await r.json()
-            print(f"\nMarin channels ({len(channels)}):")
+            print(f"\nChannels ({len(channels)}):")
             for ch in channels[:10]:
                 if ch.get("type") == 0:  # text channels
                     print(f"  #{ch['name']} ({ch['id']})")

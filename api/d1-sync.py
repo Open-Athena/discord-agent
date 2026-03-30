@@ -23,7 +23,19 @@ from pathlib import Path
 
 from click import command, option
 
-DB_NAME = "marin-discord"
+def _read_db_name() -> str:
+    """Read D1 database name from env or wrangler.toml."""
+    name = os.environ.get("D1_DB_NAME")
+    if name:
+        return name
+    toml = Path(__file__).parent / "wrangler.toml"
+    if toml.exists():
+        for line in toml.read_text().splitlines():
+            if "database_name" in line:
+                return line.split('"')[1]
+    raise RuntimeError("Set D1_DB_NAME or configure database_name in wrangler.toml")
+
+DB_NAME = _read_db_name()
 
 
 def query_d1(sql: str, remote: bool) -> str:

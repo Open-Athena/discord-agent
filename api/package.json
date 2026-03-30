@@ -1,12 +1,12 @@
 {
-  "name": "marin-discord-api",
+  "name": "discord-archive-api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "d1:create": "wrangler d1 create marin-discord",
-    "d1:import-local": "wrangler d1 execute marin-discord --local --file=../archive.sql",
+    "d1:create": "wrangler d1 create discord-archive",
+    "d1:import-local": "wrangler d1 execute discord-archive --local --file=../archive.sql",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

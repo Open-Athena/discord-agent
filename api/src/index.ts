@@ -93,7 +93,7 @@ async function getMessages(db: D1Database, channelId: string, url: URL): Promise
 		`).bind(channelId, around, half).all()
 
 		const combined = [...beforeRows.results.reverse(), ...afterRows.results]
-		rows = { results: combined.reverse(), success: true, meta: {} as D1Meta }
+		rows = { results: combined.reverse() } as D1Result<Record<string, unknown>>
 	} else if (after) {
 		rows = await db.prepare(`
 			SELECT m.*, u.username, u.global_name, u.avatar

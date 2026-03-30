@@ -285,7 +285,7 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
     token = os.environ["DISCORD_TOKEN"]
     headers = {
         "Authorization": f"Bot {token}",
-        "User-Agent": "discord-archive (https://github.com/Open-Athena/marin-bot, 0.1)",
+        "User-Agent": "discord-archive (https://github.com/Open-Athena/discord-agent, 0.1)",
     }
 
     out_dir = Path(out_dir)

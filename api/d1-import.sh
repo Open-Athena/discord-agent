@@ -6,6 +6,13 @@
 #   ./d1-import.sh --remote [path/to/archive.db]   # remote D1 import
 set -euo pipefail
 
+# Read D1 database name from wrangler.toml or D1_DB_NAME env var
+D1_NAME="${D1_DB_NAME:-$(grep 'database_name' wrangler.toml 2>/dev/null | head -1 | sed 's/.*= *"//;s/".*//')}"
+if [ -z "$D1_NAME" ]; then
+    echo "Error: set D1_DB_NAME or configure database_name in wrangler.toml" >&2
+    exit 1
+fi
+
 REMOTE=""
 DB_PATH="../archive.db"
 
@@ -68,17 +75,17 @@ if [ "$FILE_SIZE" -gt 9000000 ]; then
 
     for chunk in "$CHUNK_DIR"/chunk_*; do
         echo "Importing $(wc -l < "$chunk" | tr -d ' ') lines from $(basename "$chunk")..."
-        npx wrangler d1 execute marin-discord $REMOTE --file="$chunk" --yes
+        npx wrangler d1 execute $D1_NAME $REMOTE --file="$chunk" --yes
     done
     echo "All chunks imported."
 else
     echo "Importing..."
-    npx wrangler d1 execute marin-discord $REMOTE --file="$SQL_FILE" --yes
+    npx wrangler d1 execute $D1_NAME $REMOTE --file="$SQL_FILE" --yes
 fi
 
 # Create FTS table and rebuild (filtered from dump since it's in writable_schema)
 echo "Creating FTS index..."
-npx wrangler d1 execute marin-discord $REMOTE --command="
+npx wrangler d1 execute $D1_NAME $REMOTE --command="
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content='messages', content_rowid='rowid');
 INSERT INTO messages_fts(messages_fts) VALUES('rebuild');
 " --yes
@@ -86,7 +93,7 @@ INSERT INTO messages_fts(messages_fts) VALUES('rebuild');
 # Write metadata
 HASH=$(md5 -q "$DB_PATH" 2>/dev/null || md5sum "$DB_PATH" | cut -d' ' -f1)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-npx wrangler d1 execute marin-discord $REMOTE \
+npx wrangler d1 execute $D1_NAME $REMOTE \
     --command="CREATE TABLE IF NOT EXISTS _metadata (key TEXT PRIMARY KEY, value TEXT); INSERT OR REPLACE INTO _metadata VALUES ('md5', '$HASH'), ('imported_at', '$TIMESTAMP');" \
     --yes
 
