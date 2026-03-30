@@ -44,7 +44,8 @@ discord-archive/
   api/                # Cloudflare Worker (D1-backed API)
     d1-import.sh      # Full SQLite → D1 import
     d1-sync.py        # Incremental D1 sync (zero downtime)
-  .github/workflows/  # CI/CD for app, worker, and archive updates
+  actions/            # Composite GH Actions for downstream repos
+  .github/workflows/  # CI (typecheck)
 ```
 
 ## Scripts
@@ -139,18 +140,35 @@ npx wrangler pages deploy dist --project-name my-discord-archive
 cd api && ./d1-sync.py --remote # sync delta to D1 (zero downtime)
 ```
 
-### GitHub Actions
+### GitHub Actions (for downstream repos)
 
-Three workflows in `.github/workflows/`:
+This repo provides composite actions that downstream repos use in their workflows:
 
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `deploy-app.yml` | Push to `app/`, manual | Build + deploy viewer to CF Pages |
-| `deploy-worker.yml` | Push to `api/`, manual | Deploy Worker to CF |
-| `update-archive.yml` | Manual (+ future cron) | Fetch new messages, rebuild DB, sync to D1 |
+```yaml
+# Deploy the viewer to Cloudflare Pages
+- uses: Open-Athena/discord-agent/actions/deploy-app@v1
+  with:
+    pages_project_name: my-discord-archive
+    vite_api_base: https://my-worker.workers.dev
+    cloudflare_token: ${{ secrets.CLOUDFLARE_TOKEN }}
+    cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-Required secrets: `CLOUDFLARE_TOKEN`, `DISCORD_TOKEN`
-Required variables: `CLOUDFLARE_ACCOUNT_ID`, `VITE_API_BASE`, `AWS_ROLE_ARN`
+# Deploy the Worker API
+- uses: Open-Athena/discord-agent/actions/deploy-worker@v1
+  with:
+    cloudflare_token: ${{ secrets.CLOUDFLARE_TOKEN }}
+    cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    wrangler_toml: wrangler.toml  # your project's wrangler.toml
+
+# Update the archive (fetch + rebuild + sync D1)
+- uses: Open-Athena/discord-agent/actions/update-archive@v1
+  with:
+    discord_token: ${{ secrets.DISCORD_TOKEN }}
+    cloudflare_token: ${{ secrets.CLOUDFLARE_TOKEN }}
+    wrangler_toml: wrangler.toml
+```
+
+See [`actions/`] for full input documentation.
 
 ### DVX / Data versioning
 
@@ -171,6 +189,7 @@ dvx pull                  # restore archive from remote
 5. Invite the bot to your server with `Read Message History` + `Read Messages` permissions
 6. Find your guild ID (right-click server name → Copy Server ID) → set as `DISCORD_GUILD`
 
+[`actions/`]: ./actions
 [use-kbd]: https://github.com/runsascoded/use-kbd
 [TanStack Virtual]: https://tanstack.com/virtual
 [DVX]: https://github.com/runsascoded/dvx
