@@ -31,7 +31,7 @@ function renderContent(content: string, lookup: LookupData, onPrefetchChannel?: 
 
   while ((match = codeBlockRegex.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(...renderInline(content.slice(lastIndex, match.index), key, lookup))
+      parts.push(...renderInline(content.slice(lastIndex, match.index), key, lookup, onPrefetchChannel))
       key += 100
     }
     parts.push(
@@ -43,13 +43,13 @@ function renderContent(content: string, lookup: LookupData, onPrefetchChannel?: 
   }
 
   if (lastIndex < content.length) {
-    parts.push(...renderInline(content.slice(lastIndex), key, lookup))
+    parts.push(...renderInline(content.slice(lastIndex), key, lookup, onPrefetchChannel))
   }
 
   return parts
 }
 
-function renderInline(text: string, keyOffset: number, lookup: LookupData): ReactNode[] {
+function renderInline(text: string, keyOffset: number, lookup: LookupData, onPrefetchChannel?: (channelId: string) => void): ReactNode[] {
   const parts: ReactNode[] = []
   let key = keyOffset
 
