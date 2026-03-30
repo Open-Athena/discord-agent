@@ -1,0 +1,46 @@
+name: Deploy Discord Archive Worker API
+description: Deploy the D1-backed API worker to Cloudflare
+
+inputs:
+  cloudflare_token:
+    description: Cloudflare API token
+    required: true
+  cloudflare_account_id:
+    description: Cloudflare account ID
+    required: true
+  wrangler_toml:
+    description: Path to wrangler.toml in the caller's repo (copied over discord-agent's default)
+    default: ""
+  ref:
+    description: discord-agent ref to build from
+    default: v1
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: Open-Athena/discord-agent
+        ref: ${{ inputs.ref }}
+        path: .discord-agent
+    - name: Override wrangler.toml from caller
+      if: ${{ inputs.wrangler_toml != '' }}
+      shell: bash
+      run: cp "${{ inputs.wrangler_toml }}" .discord-agent/api/wrangler.toml
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 10
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: .discord-agent/api/pnpm-lock.yaml
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: .discord-agent/api
+    - uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ inputs.cloudflare_token }}
+        accountId: ${{ inputs.cloudflare_account_id }}
+        command: deploy
+        workingDirectory: .discord-agent/api

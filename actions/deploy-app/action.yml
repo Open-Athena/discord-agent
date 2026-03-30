@@ -1,0 +1,50 @@
+name: Deploy Discord Archive Viewer
+description: Build and deploy the viewer app to Cloudflare Pages
+
+inputs:
+  pages_project_name:
+    description: Cloudflare Pages project name
+    required: true
+  vite_api_base:
+    description: API base URL baked into the build
+    required: true
+  cloudflare_token:
+    description: Cloudflare API token
+    required: true
+  cloudflare_account_id:
+    description: Cloudflare account ID
+    required: true
+  ref:
+    description: discord-agent ref to build from
+    default: v1
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: Open-Athena/discord-agent
+        ref: ${{ inputs.ref }}
+        path: .discord-agent
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 10
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: .discord-agent/app/pnpm-lock.yaml
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: .discord-agent/app
+    - run: pnpm build
+      shell: bash
+      working-directory: .discord-agent/app
+      env:
+        VITE_API_BASE: ${{ inputs.vite_api_base }}
+    - uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ inputs.cloudflare_token }}
+        accountId: ${{ inputs.cloudflare_account_id }}
+        command: pages deploy dist --project-name ${{ inputs.pages_project_name }}
+        workingDirectory: .discord-agent/app

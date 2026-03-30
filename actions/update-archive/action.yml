@@ -1,0 +1,123 @@
+name: Update Discord Archive
+description: Fetch new messages, rebuild DB, sync to D1, push to DVX remote
+
+inputs:
+  archive_dir:
+    description: Path to archive directory in the caller's repo
+    default: archive
+  db_path:
+    description: Path to SQLite DB in the caller's repo
+    default: archive.db
+  guild_id:
+    description: Discord guild (server) ID
+    required: true
+  discord_token:
+    description: Discord bot token
+    required: true
+  cloudflare_token:
+    description: Cloudflare API token
+    required: true
+  full_reimport:
+    description: Full reimport (drop + recreate) instead of incremental
+    default: "false"
+  wrangler_toml:
+    description: Path to wrangler.toml in the caller's repo
+    default: ""
+  ref:
+    description: discord-agent ref
+    default: v1
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: Open-Athena/discord-agent
+        ref: ${{ inputs.ref }}
+        path: .discord-agent
+
+    - uses: astral-sh/setup-uv@v5
+      with:
+        version: latest
+
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 10
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: .discord-agent/api/pnpm-lock.yaml
+
+    - run: pip install dvx[s3]
+      shell: bash
+
+    # Pull existing archive
+    - run: dvx pull
+      shell: bash
+
+    # Fetch new messages
+    - run: uv run .discord-agent/archive.py -g "$DISCORD_GUILD" -o "$ARCHIVE_DIR"
+      shell: bash
+      env:
+        DISCORD_TOKEN: ${{ inputs.discord_token }}
+        DISCORD_GUILD: ${{ inputs.guild_id }}
+        ARCHIVE_DIR: ${{ inputs.archive_dir }}
+
+    # Rebuild SQLite
+    - run: uv run .discord-agent/build_db.py "$ARCHIVE_DIR" "$DB_PATH"
+      shell: bash
+      env:
+        ARCHIVE_DIR: ${{ inputs.archive_dir }}
+        DB_PATH: ${{ inputs.db_path }}
+
+    # Update DVX cache
+    - run: dvx add "$ARCHIVE_DIR" && dvx push
+      shell: bash
+      env:
+        ARCHIVE_DIR: ${{ inputs.archive_dir }}
+
+    # Override wrangler.toml if provided
+    - name: Override wrangler.toml
+      if: ${{ inputs.wrangler_toml != '' }}
+      shell: bash
+      run: cp "${{ inputs.wrangler_toml }}" .discord-agent/api/wrangler.toml
+
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: .discord-agent/api
+
+    # Incremental D1 sync
+    - name: Incremental D1 sync
+      if: ${{ inputs.full_reimport != 'true' }}
+      shell: bash
+      working-directory: .discord-agent/api
+      run: uv run d1-sync.py --remote -d "$DB_PATH"
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare_token }}
+        DB_PATH: ${{ github.workspace }}/${{ inputs.db_path }}
+
+    # Full reimport
+    - name: Full D1 reimport
+      if: ${{ inputs.full_reimport == 'true' }}
+      shell: bash
+      working-directory: .discord-agent/api
+      run: ./d1-import.sh --remote "$DB_PATH"
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare_token }}
+        DB_PATH: ${{ github.workspace }}/${{ inputs.db_path }}
+
+    # Commit updated archive.dvc if changed
+    - name: Commit archive update
+      shell: bash
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        if git diff --quiet; then
+          echo "No archive changes"
+        else
+          git add -u
+          git commit -m "Update archive $(date -u +%Y-%m-%d)"
+          git push
+        fi
