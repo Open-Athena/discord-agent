@@ -86,6 +86,7 @@ function AppContent() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const lookup = useMemo(() => ({
     channels: new Map(channels.map(c => [c.id, c])),
@@ -148,22 +149,31 @@ function AppContent() {
   }, [channels, handleSelectChannel])
   useActions(channelActions)
 
+  const handleSelectChannelMobile = useCallback((channel: Channel) => {
+    handleSelectChannel(channel)
+    setSidebarOpen(false)
+  }, [handleSelectChannel])
+
   return (
     <LookupContext.Provider value={lookup}>
       <div className="app">
-        <div className="sidebar">
+        {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+        <div className={`sidebar${sidebarOpen ? ' open' : ''}`}>
           <div className="sidebar-header">
             <h1>Discord Archive</h1>
           </div>
           <ChannelList
             channels={channels}
             activeChannelId={activeChannel?.id ?? null}
-            onSelectChannel={handleSelectChannel}
+            onSelectChannel={handleSelectChannelMobile}
           />
         </div>
         <div className="main">
           <div className="main-header">
             <div className="main-header-left">
+              <button className="sidebar-toggle" onClick={() => setSidebarOpen(s => !s)}>
+                <span className="hamburger" />
+              </button>
               {activeChannel && (
                 <>
                   <span className="header-hash">#</span>
@@ -190,13 +200,16 @@ function AppContent() {
               <div className="no-channel">Select a channel to view messages</div>
             )}
           </div>
-          {searchOpen && (
-            <SearchPanel
-              inputRef={searchInputRef}
-              onNavigate={handleNavigate}
-              onClose={() => setSearchOpen(false)}
-            />
-          )}
+          <SearchPanel
+            inputRef={searchInputRef}
+            hidden={!searchOpen}
+            onNavigate={(chId, msgId) => {
+              handleNavigate(chId, msgId)
+              // Close search on mobile
+              if (window.innerWidth <= 768) setSearchOpen(false)
+            }}
+            onClose={() => setSearchOpen(false)}
+          />
         </div>
       </div>
       <ShortcutsModal />

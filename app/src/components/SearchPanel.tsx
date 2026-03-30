@@ -4,11 +4,12 @@ import { useLookup } from '../context'
 
 interface Props {
   inputRef?: RefObject<HTMLInputElement | null>
+  hidden?: boolean
   onNavigate: (channelId: string, messageId: string) => void
   onClose: () => void
 }
 
-export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose }: Props) {
+export default function SearchPanel({ inputRef: externalRef, hidden, onNavigate, onClose }: Props) {
   const lookup = useLookup()
   const prefetch = usePrefetchMessages()
   const [query, setQuery] = useState('')
@@ -17,8 +18,8 @@ export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose
   const inputRef = externalRef || internalRef
 
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    if (!hidden) inputRef.current?.focus()
+  }, [hidden])
 
   // Debounce the query
   useEffect(() => {
@@ -102,7 +103,7 @@ export default function SearchPanel({ inputRef: externalRef, onNavigate, onClose
   }
 
   return (
-    <div className="search-panel">
+    <div className={`search-panel${hidden ? ' hidden' : ''}`}>
       <div className="search-header">
         <input
           ref={inputRef}
