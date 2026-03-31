@@ -16,10 +16,15 @@ Usage:
 """
 
 import json
-import sqlite3
+import os
 import subprocess
+import sqlite3
+import sys
 import tempfile
+from functools import partial
 from pathlib import Path
+
+err = partial(print, file=sys.stderr)
 
 from click import command, option
 
@@ -50,14 +55,21 @@ def query_d1(sql: str, remote: bool) -> str:
 def get_last_synced_id(remote: bool) -> str | None:
     """Get the last synced message ID from D1 metadata."""
     out = query_d1("SELECT value FROM _metadata WHERE key = 'last_message_id'", remote)
+    if not out.strip():
+        return None
     try:
         data = json.loads(out)
-        for item in data:
-            results = item.get("results", [])
-            if results:
-                return results[0]["value"]
-    except (json.JSONDecodeError, KeyError, IndexError):
-        pass
+    except json.JSONDecodeError:
+        err(f"Warning: couldn't parse D1 query output: {out[:200]}")
+        return None
+    # wrangler --json returns a list of result objects
+    if not isinstance(data, list):
+        err(f"Warning: unexpected D1 output type: {type(data).__name__}")
+        return None
+    for item in data:
+        for row in item.get("results", []):
+            if "value" in row:
+                return row["value"]
     return None
 
 
