@@ -47,9 +47,12 @@ engineering team. Produce three tiers of summary, returned as JSON.
 Output format — return ONLY valid JSON with these keys:
 {{
   "xs": "1-2 sentence headline with key stats (under 280 chars)",
-  "s": "~5 bullet points (markdown list), one per major workstream/topic",
-  "m": "Full multi-section summary (markdown)"
+  "s": "One bullet per M section (markdown list) — see S guidelines below",
+  "m": "Full multi-section summary (markdown) — see M guidelines below"
 }}
+
+CRITICAL: The S tier must have exactly one bullet for each ## section in M, \
+in the same order. No more, no fewer.
 
 Style guidelines for all tiers:
 - Tag key people by their Discord display name
@@ -58,10 +61,10 @@ Style guidelines for all tiers:
 - Skip channels with only bot messages or trivial activity
 
 Additional guidelines for the S (bullet) tier:
-- Each bullet should include 1-2 inline links to key Discord messages using \
-the [discord] links from the input data (the most important or representative \
-message for that topic)
-- Format: **Topic** — description with [key detail](discord_link)
+- One bullet per ## section in M, in the same order
+- Each bullet is one concise line: **Topic** — single sentence summary
+- Keep each bullet under 120 chars (excluding the bold topic name)
+- No inline links needed (they will be added programmatically)
 
 Additional guidelines for the M (full) tier:
 - Use ## headers for each workstream/topic section
