@@ -1,7 +1,10 @@
 #!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["click"]
+# dependencies = [
+#     "click",
+#     "thrds @ git+https://github.com/runsascoded/thrds@8080f3bf0f29e0e140e2e674c6bb6e93fbca101c",
+# ]
 # ///
 """Generate weekly Discord activity summaries in XS/S/M tiers.
 
@@ -53,6 +56,12 @@ Style guidelines for all tiers:
 - Casual but informative tone
 - Lead with the most active/important topics
 - Skip channels with only bot messages or trivial activity
+
+Additional guidelines for the S (bullet) tier:
+- Each bullet should include 1-2 inline links to key Discord messages using \
+the [discord] links from the input data (the most important or representative \
+message for that topic)
+- Format: **Topic** — description with [key detail](discord_link)
 
 Additional guidelines for the M (full) tier:
 - Use ## headers for each workstream/topic section
@@ -305,6 +314,28 @@ def discord_post(channel_id: str, content: str, thread_id: str | None = None, su
     return json.loads(result.stdout)
 
 
+def discord_edit(channel_id: str, message_id: str, content: str, suppress_embeds: bool = False) -> dict:
+    """Edit a bot message on Discord."""
+    token = os.environ["DISCORD_TOKEN"]
+    payload = {"content": content}
+    if suppress_embeds:
+        payload["flags"] = 4
+    result = subprocess.run(
+        [
+            "curl", "-s",
+            "-X", "PATCH",
+            f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}",
+            "-H", f"Authorization: Bot {token}",
+            "-H", "Content-Type: application/json",
+            "-H", "User-Agent: MarinBot/1.0",
+            "-d", json.dumps(payload),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def discord_create_thread(channel_id: str, message_id: str, name: str) -> dict:
     """Create a thread from a message."""
     token = os.environ["DISCORD_TOKEN"]
@@ -325,17 +356,42 @@ def discord_create_thread(channel_id: str, message_id: str, name: str) -> dict:
 
 
 def chunk_message(text: str, limit: int = 1900) -> list[str]:
-    """Split text into chunks respecting Discord's 2000 char limit."""
+    """Split text on section boundaries (## headers), with char limit fallback.
+
+    Each section (from one ## header to the next) becomes its own chunk.
+    If a single section exceeds the limit, it falls back to line-based splitting.
+    """
+    # Split on ## headers, keeping the header with its content
+    sections = re.split(r'(?=^## )', text, flags=re.MULTILINE)
+    # Also split on Slack-style bold headers (*#channel — Title*)
+    expanded = []
+    for s in sections:
+        parts = re.split(r'(?=^\*#\w)', s, flags=re.MULTILINE)
+        expanded.extend(parts)
+
     chunks = []
-    chunk = ""
-    for line in text.split("\n"):
-        if len(chunk) + len(line) + 1 > limit:
-            chunks.append(chunk)
-            chunk = line
+    for section in expanded:
+        section = section.strip()
+        if not section:
+            continue
+        has_header = bool(re.match(r'(?:## |\*#)', section))
+        if chunks and not has_header and len(chunks[-1]) + len(section) + 2 <= limit:
+            # Only merge headerless continuation text with previous chunk
+            chunks[-1] += "\n\n" + section
+            continue
+        if len(section) <= limit:
+            chunks.append(section)
         else:
-            chunk += "\n" + line if chunk else line
-    if chunk:
-        chunks.append(chunk)
+            # Section too long, fall back to line splitting
+            chunk = ""
+            for line in section.split("\n"):
+                if len(chunk) + len(line) + 1 > limit:
+                    chunks.append(chunk)
+                    chunk = line
+                else:
+                    chunk += "\n" + line if chunk else line
+            if chunk:
+                chunks.append(chunk)
     return chunks
 
 
@@ -348,8 +404,28 @@ def format_week_title(week_start: str) -> str:
     return f"{start.strftime('%b')} {start.day} – {end.strftime('%b')} {end.day}, {start.year}"
 
 
-def post_to_discord(summary: dict, channel_id: str, week_start: str):
-    """Post XS as main message, then S and M in a thread."""
+def viewer_to_discord_links(text: str, viewer_base: str, guild_id: str) -> str:
+    """Convert viewer URLs to Discord message URLs."""
+    if not viewer_base or not guild_id:
+        return text
+    # viewer: https://marin-discord.pages.dev/#CHANNEL_ID/MESSAGE_ID
+    # discord: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+    escaped = re.escape(viewer_base.rstrip("/"))
+    return re.sub(
+        rf'{escaped}/#(\d+)/(\d+)',
+        rf'https://discord.com/channels/{guild_id}/\1/\2',
+        text,
+    )
+
+
+def post_to_discord(summary: dict, channel_id: str, week_start: str, guild_id: str = ""):
+    """Post XS as main message, then S and M in a thread. Edits S to add jump links."""
+    # Convert viewer links to Discord links for in-Discord posting
+    summary = {
+        k: viewer_to_discord_links(v, VIEWER_BASE, guild_id)
+        for k, v in summary.items()
+    }
+
     title = f"Weekly Digest: {format_week_title(week_start)}"
     xs_content = f"# {title}\n{summary['xs']}"
 
@@ -367,43 +443,167 @@ def post_to_discord(summary: dict, channel_id: str, week_start: str):
     thread_id = thread["id"]
     err(f"Created thread '{thread_name}' (id {thread_id})")
 
-    # Post S summary in thread
+    # Post S summary in thread (will be edited later with jump links)
     time.sleep(1)
     s_msg = discord_post(thread_id, summary["s"], suppress_embeds=True)
-    if "id" in s_msg:
-        err(f"Posted S in thread (msg {s_msg['id']})")
+    s_msg_id = s_msg.get("id")
+    if s_msg_id:
+        err(f"Posted S in thread (msg {s_msg_id})")
     else:
         err(f"S post failed: {s_msg}")
 
-    # Post M summary in thread (chunked)
-    for i, chunk in enumerate(chunk_message(summary["m"])):
+    # Post M summary in thread (chunked), tracking which sections land in which message
+    m_chunks = chunk_message(summary["m"])
+    # Map: section header text → message ID (for jump links)
+    section_msg_ids = {}
+    for i, chunk in enumerate(m_chunks):
         time.sleep(1)
         m_msg = discord_post(thread_id, chunk, suppress_embeds=True)
         if "id" in m_msg:
-            err(f"Posted M chunk {i+1} in thread (msg {m_msg['id']})")
+            err(f"Posted M chunk {i+1}/{len(m_chunks)} in thread (msg {m_msg['id']})")
+            # Find section headers in this chunk
+            for match in re.finditer(r'^## .+? — (.+)$', chunk, re.MULTILINE):
+                section_msg_ids[match.group(1).strip().lower()] = m_msg["id"]
         else:
             err(f"M chunk {i+1} failed: {m_msg}")
 
+    # Edit S to append jump links to M sections
+    if s_msg_id and section_msg_ids and guild_id:
+        s_lines = summary["s"].split("\n")
+        new_lines = []
+        for line in s_lines:
+            # Match bullet topic: "- **Topic** —" or "- **Topic (N msgs)** —"
+            m = re.match(r'^- \*\*(.+?)\*\*', line)
+            if m:
+                topic = m.group(1).split("(")[0].strip().lower()
+                topic_words = [w for w in topic.split() if len(w) > 2]
+                # Score each section by word overlap with bullet topic
+                best_id, best_score = None, 0
+                for section_key, msg_id in section_msg_ids.items():
+                    sk = section_key.lower()
+                    score = sum(1 for w in topic_words if w in sk)
+                    if score > best_score:
+                        best_id, best_score = msg_id, score
+                if best_id:
+                    jump_url = f"https://discord.com/channels/{guild_id}/{thread_id}/{best_id}"
+                    line = re.sub(r'^(- \*\*.+?\*\*)', rf'\1 ([details]({jump_url}))', line)
+            new_lines.append(line)
+        updated_s = "\n".join(new_lines)
+        if updated_s != summary["s"]:
+            time.sleep(1)
+            discord_edit(thread_id, s_msg_id, updated_s, suppress_embeds=True)
+            err("Edited S with jump links to M sections")
 
-def post_to_slack(summary: dict, channel_id: str):
-    """Post summary to a Slack channel."""
+
+def md_to_mrkdwn(text: str, channel_map: dict[str, str] | None = None) -> str:
+    """Convert Markdown to Slack mrkdwn format.
+
+    Args:
+        text: Markdown text
+        channel_map: Discord channel ID → name mapping
+    """
+    if channel_map is None:
+        channel_map = {}
+
+    def resolve_channel(m):
+        ch_id = m.group(1)
+        name = channel_map.get(ch_id, ch_id)
+        return f"#{name}"
+
+    lines = text.split("\n")
+    out = []
+    for line in lines:
+        # Discord channel mentions: <#ID> → #channel-name
+        line = re.sub(r'<#(\d+)>', resolve_channel, line)
+        # Headers: ## #channel — Title → *#channel — Title*
+        header_match = re.match(r'^#{1,3}\s+(.+)$', line)
+        if header_match:
+            line = f"*{header_match.group(1)}*"
+        # Bold: **text** → *text*
+        line = re.sub(r'\*\*(.+?)\*\*', r'*\1*', line)
+        # Links: [text](url) → <url|text>
+        line = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', line)
+        # Angle-bracket URLs (embed suppression): <https://...> → just the URL
+        line = re.sub(r'<(https?://[^>|]+)>', r'\1', line)
+        # Bullet lists: - item → • item
+        line = re.sub(r'^- ', '• ', line)
+        # Horizontal rules
+        line = re.sub(r'^---+$', '─' * 40, line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def slack_post(token: str, channel: str, text: str, thread_ts: str | None = None) -> dict:
+    """Post a message to Slack. Returns API response dict."""
     import urllib.request
+    payload = {"channel": channel, "text": text, "mrkdwn": True}
+    if thread_ts:
+        payload["thread_ts"] = thread_ts
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.postMessage",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
+
+
+def load_channel_map(db_path: str) -> dict[str, str]:
+    """Load channel ID → name mapping from the archive DB."""
+    db = sqlite3.connect(db_path)
+    rows = db.execute("SELECT id, name FROM channels").fetchall()
+    db.close()
+    return {str(r[0]): r[1] for r in rows}
+
+
+def add_slack_details_links(s_text: str, m_ts_list: list[str], slack_client) -> str:
+    """Add positional (details) jump links to S bullet items."""
+    lines = s_text.split("\n")
+    new_lines = []
+    bullet_idx = 0
+    for line in lines:
+        if re.match(r'^• \*.+?\*', line) and bullet_idx < len(m_ts_list):
+            link = slack_client.permalink(m_ts_list[bullet_idx])
+            line = re.sub(r'^(• \*.+?\*)', rf'\1 (<{link}|details>)', line)
+            bullet_idx += 1
+        new_lines.append(line)
+    return "\n".join(new_lines)
+
+
+def post_to_slack(summary: dict, channel_id: str, week_start: str, db_path: str = ""):
+    """Post XS/S/M to Slack using thrds for declarative thread sync."""
+    from thrds import SlackClient, Thread
 
     token = os.environ["SLACK_TOKEN"]
-    url = "https://slack.com/api/chat.postMessage"
-    # Post XS as main message, S+M as thread reply (TODO: mrkdwn conversion)
-    text = summary["xs"] + "\n\n" + summary["s"]
-    data = json.dumps({"channel": channel_id, "text": text, "mrkdwn": True}).encode()
-    req = urllib.request.Request(url, data=data, headers={
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    })
-    with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read())
-        if not result.get("ok"):
-            err(f"Slack post failed: {result.get('error')}")
-        else:
-            err(f"Posted to Slack channel {channel_id}")
+    title = f"*Weekly Digest: {format_week_title(week_start)}*"
+    channel_map = load_channel_map(db_path) if db_path else {}
+
+    xs = md_to_mrkdwn(summary["xs"], channel_map)
+    s = md_to_mrkdwn(summary["s"], channel_map)
+    m = md_to_mrkdwn(summary["m"], channel_map)
+    m_chunks = chunk_message(m, limit=3500)
+
+    desired = [f"{title}\n{xs}", s] + m_chunks
+
+    slack = SlackClient(token=token, channel=channel_id)
+    result = slack.sync(Thread(messages=desired))
+    err(f"Slack sync: {len(result.message_ids)} msgs, "
+        f"{sum(1 for a in result.actions if a.type.name == 'POST')} posted, "
+        f"{sum(1 for a in result.actions if a.type.name == 'EDIT')} edited")
+
+    # Edit S with (details) links pointing to M messages
+    s_ts = result.message_ids[1]
+    m_ts_list = result.message_ids[2:]
+    updated_s = add_slack_details_links(s, m_ts_list, slack)
+    if updated_s != s:
+        slack.edit(s_ts, updated_s)
+        err("Edited S with details links")
+
+    return result
 
 
 @command()
@@ -453,9 +653,9 @@ def main(db_path, guild_id, dry_run, output, viewer_base, week, post_discord, po
 
     # Post to channels
     if post_discord:
-        post_to_discord(summary, post_discord, start)
+        post_to_discord(summary, post_discord, start, guild_id=DISCORD_GUILD_ID)
     if post_slack:
-        post_to_slack(summary, post_slack)
+        post_to_slack(summary, post_slack, start, db_path=db_path)
 
 
 if __name__ == "__main__":
