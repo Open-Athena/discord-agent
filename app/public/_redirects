@@ -1,0 +1,4 @@
+# Redirect /archive.db to the R2-hosted bulk archive snapshot. Lets users
+# share a clean viewer-domain URL while downloads hit R2 (zero egress).
+# 302 so a future backend change can re-route without cached redirects.
+/archive.db https://pub-5b49496c4901401b9debf2fcb8cf0ce0.r2.dev/archive.db 302
