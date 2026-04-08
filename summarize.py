@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "click",
-#     "thrds @ git+https://github.com/runsascoded/thrds@fc7513907510015b8a9131103b52bbfc3e7e9767",
+#     "thrds @ git+https://github.com/runsascoded/thrds@e5813b6e0bfaaaf14827ad69f1f6adbb6eb79b8a",
 # ]
 # ///
 """Generate weekly Discord activity summaries in XS/S/M tiers.
