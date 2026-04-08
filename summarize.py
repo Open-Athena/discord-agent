@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "click",
-#     "thrds @ git+https://github.com/runsascoded/thrds@e5813b6e0bfaaaf14827ad69f1f6adbb6eb79b8a",
+#     "thrds>=0.2.0",
 # ]
 # ///
 """Generate weekly Discord activity summaries in XS/S/M tiers.
@@ -76,6 +76,8 @@ provided below.
 - Reference specific messages using the [viewer] and [discord] links provided
 - When citing a key discussion point, include a link to the originating message
 - Wrap bare URLs in angle brackets to suppress embeds: <https://example.com>
+- For arxiv and other paper links, use the paper title as anchor text: \
+[Paper Title](https://arxiv.org/abs/...) — never leave arxiv URLs bare
 - End with a "News & Research" section for shared papers/links if any
 
 {channel_id_map}"""
