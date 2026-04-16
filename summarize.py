@@ -2,6 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#     "anthropic",
 #     "click",
 #     "thrds>=0.2.0",
 # ]
@@ -257,8 +258,11 @@ def format_channel_data(data: dict) -> str:
     return "\n".join(parts)
 
 
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
+
+
 def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
-    """Call `claude` CLI to generate tiered summaries. Returns dict with xs, s, m keys."""
+    """Generate tiered summaries via Anthropic API (if `ANTHROPIC_API_KEY` set) or `claude` CLI."""
     stats = format_stats(data)
     channel_data = format_channel_data(data)
     channel_id_map = format_channel_id_map(data)
@@ -270,22 +274,32 @@ def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
         stats=stats,
         channel_data=channel_data,
     )
-    prompt = system + "\n\n" + user_prompt
 
-    err(f"Sending {len(prompt)} chars to claude CLI...")
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        from anthropic import Anthropic
+        err(f"Sending {len(system) + len(user_prompt)} chars to Anthropic API ({ANTHROPIC_MODEL})...")
+        client = Anthropic()
+        response = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=16000,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = response.content[0].text.strip()
+    else:
+        prompt = system + "\n\n" + user_prompt
+        err(f"Sending {len(prompt)} chars to claude CLI...")
+        result = subprocess.run(
+            ["claude", "-p", "--output-format", "text"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            err(f"claude CLI failed: {result.stderr}")
+            raise RuntimeError(f"claude CLI exited with {result.returncode}")
+        raw = result.stdout.strip()
 
-    result = subprocess.run(
-        ["claude", "-p", "--output-format", "text"],
-        input=prompt,
-        capture_output=True,
-        text=True,
-    )
-
-    if result.returncode != 0:
-        err(f"claude CLI failed: {result.stderr}")
-        raise RuntimeError(f"claude CLI exited with {result.returncode}")
-
-    raw = result.stdout.strip()
     # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = re.sub(r'^```(?:json)?\s*\n?', '', raw)
