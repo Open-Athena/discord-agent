@@ -260,9 +260,28 @@ def format_channel_data(data: dict) -> str:
 
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
 
+# USD per 1M tokens (Anthropic Opus 4.x pricing); override via env if needed.
+PRICE_INPUT = float(os.environ.get("ANTHROPIC_PRICE_INPUT", "15"))
+PRICE_OUTPUT = float(os.environ.get("ANTHROPIC_PRICE_OUTPUT", "75"))
+PRICE_CACHE_WRITE = float(os.environ.get("ANTHROPIC_PRICE_CACHE_WRITE", "18.75"))
+PRICE_CACHE_READ = float(os.environ.get("ANTHROPIC_PRICE_CACHE_READ", "1.50"))
 
-def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
-    """Generate tiered summaries via Anthropic API (if `ANTHROPIC_API_KEY` set) or `claude` CLI."""
+
+def compute_cost(usage: dict) -> float:
+    """USD cost for a usage dict with `*_tokens` keys."""
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    cw = usage.get("cache_creation_input_tokens", 0)
+    cr = usage.get("cache_read_input_tokens", 0)
+    return (inp * PRICE_INPUT + out * PRICE_OUTPUT
+            + cw * PRICE_CACHE_WRITE + cr * PRICE_CACHE_READ) / 1_000_000
+
+
+def generate_summary(data: dict, week_start: str, week_end: str) -> tuple[dict, dict | None]:
+    """Generate tiered summaries via Anthropic API (if `ANTHROPIC_API_KEY` set) or `claude` CLI.
+
+    Returns (summary, usage). `usage` is None for the CLI path.
+    """
     stats = format_stats(data)
     channel_data = format_channel_data(data)
     channel_id_map = format_channel_id_map(data)
@@ -275,6 +294,7 @@ def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
         channel_data=channel_data,
     )
 
+    usage: dict | None = None
     if os.environ.get("ANTHROPIC_API_KEY"):
         from anthropic import Anthropic
         err(f"Sending {len(system) + len(user_prompt)} chars to Anthropic API ({ANTHROPIC_MODEL})...")
@@ -286,6 +306,16 @@ def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
             messages=[{"role": "user", "content": user_prompt}],
         )
         raw = response.content[0].text.strip()
+        u = response.usage
+        usage = {
+            "model": ANTHROPIC_MODEL,
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+            "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0,
+        }
+        usage["cost_usd"] = round(compute_cost(usage), 4)
+        err(f"Usage: {usage['input_tokens']} in + {usage['output_tokens']} out = ${usage['cost_usd']:.4f}")
     else:
         prompt = system + "\n\n" + user_prompt
         err(f"Sending {len(prompt)} chars to claude CLI...")
@@ -305,7 +335,7 @@ def generate_summary(data: dict, week_start: str, week_end: str) -> dict:
         raw = re.sub(r'^```(?:json)?\s*\n?', '', raw)
         raw = re.sub(r'\n?```\s*$', '', raw)
 
-    return json.loads(raw)
+    return json.loads(raw), usage
 
 
 def discord_post(channel_id: str, content: str, thread_id: str | None = None, suppress_embeds: bool = False) -> dict:
@@ -658,7 +688,7 @@ def main(db_path, guild_id, dry_run, output, viewer_base, week, post_discord, po
         print(f"# Week of {start} to {end}\n\n{stats}\n\n{channel_data}")
         return
 
-    summary = generate_summary(data, start, end)
+    summary, usage = generate_summary(data, start, end)
 
     # Output
     if output == '-':
@@ -668,6 +698,8 @@ def main(db_path, guild_id, dry_run, output, viewer_base, week, post_discord, po
         out_dir.mkdir(parents=True, exist_ok=True)
         for tier in ("xs", "s", "m"):
             (out_dir / f"{tier}.md").write_text(summary[tier] + "\n")
+        if usage:
+            (out_dir / "usage.json").write_text(json.dumps(usage, indent=2) + "\n")
         err(f"Wrote summaries to {out_dir}/{{xs,s,m}}.md")
 
     # Post to channels
