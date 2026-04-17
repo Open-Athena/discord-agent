@@ -218,7 +218,7 @@ function AppContent() {
           <div className="main-content">
             {activeChannel ? (
               <MessageList
-                key={`${activeChannel.id}-${targetMessageId || ''}`}
+                key={activeChannel.id}
                 channelId={activeChannel.id}
                 targetMessageId={targetMessageId}
                 onNavigate={handleNavigate}
