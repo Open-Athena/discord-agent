@@ -1,5 +1,5 @@
+import { useEffect, useState } from 'react'
 import { useMeta } from '../hooks'
-import { API_BASE } from '../api'
 import Tooltip from './Tooltip'
 
 function relativeAgo(iso: string): string {
@@ -21,19 +21,42 @@ function absolute(iso: string): string {
   })
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+function useArchiveDbInfo(url: string | null) {
+  const [info, setInfo] = useState<{ size: number; lastModified: string | null } | null>(null)
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    fetch(url, { method: 'HEAD' }).then(async res => {
+      if (cancelled || !res.ok) return
+      const size = parseInt(res.headers.get('content-length') || '0', 10)
+      const lastModified = res.headers.get('last-modified')
+      setInfo({ size, lastModified })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [url])
+  return info
+}
+
 export default function FreshnessFooter() {
   const { data: meta } = useMeta()
+  const archiveInfo = useArchiveDbInfo(meta?.archive_db_url ?? null)
   if (!meta || !meta.latest_message_ts) return null
 
   const ago = relativeAgo(meta.latest_message_ts)
   const abs = absolute(meta.latest_message_ts)
-  const apiUrl = new URL(API_BASE, window.location.href).href
 
   return (
-    <Tooltip content={
+    <Tooltip interactive content={
       <div className="freshness-tooltip">
         <div className="freshness-row">
-          <span className="freshness-label">Latest message</span>
+          <span className="freshness-label">Latest msg</span>
           <span>{abs} ({ago})</span>
         </div>
         <div className="freshness-row">
@@ -48,21 +71,30 @@ export default function FreshnessFooter() {
           <span className="freshness-label">Users</span>
           <span>{meta.total_users.toLocaleString()}</span>
         </div>
-        <hr className="freshness-divider" />
-        <div className="freshness-links">
-          <a href={apiUrl} target="_blank" rel="noopener noreferrer">
-            D1 API (live) ↗
-          </a>
-          {meta.archive_db_url && (
-            <a href={meta.archive_db_url} target="_blank" rel="noopener noreferrer">
-              archive.db (daily) ↗
-            </a>
-          )}
-        </div>
+        {meta.archive_db_url && (
+          <>
+            <hr className="freshness-divider" />
+            <div className="freshness-links">
+              <a href={meta.archive_db_url} target="_blank" rel="noopener noreferrer" download>
+                ⬇ Download archive.db
+                {archiveInfo && (
+                  <span className="freshness-meta"> ({formatBytes(archiveInfo.size)}{
+                    archiveInfo.lastModified
+                      ? ` · ${relativeAgo(new Date(archiveInfo.lastModified).toISOString())}`
+                      : ''
+                  })</span>
+                )}
+              </a>
+              <div className="freshness-hint">
+                SQLite file, updated daily. Query with <code>sqlite3</code> or a notebook.
+              </div>
+            </div>
+          </>
+        )}
       </div>
     }>
       <div className="freshness-footer">
-        <span>Updated {ago}</span>
+        <span>Latest msg {ago}</span>
         <span className="freshness-dot">·</span>
         <span>{meta.total_messages.toLocaleString()} msgs</span>
       </div>

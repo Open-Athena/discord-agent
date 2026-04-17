@@ -27,10 +27,11 @@ function renderLink(
         key={key}
         channelId={parsed.channelId}
         messageId={parsed.messageId}
-        discordUrl={url}
-        label={text}
+        guildId={lookup.guildId}
         onPrefetchChannel={onPrefetchChannel}
-      />
+      >
+        {text}
+      </DiscordLink>
     )
   }
   return <a key={key} href={url} target="_blank" rel="noopener noreferrer">{text}</a>
@@ -39,19 +40,37 @@ function renderLink(
 function DiscordLink({
   channelId,
   messageId,
-  discordUrl,
-  label,
+  guildId,
+  className,
+  children,
+  onClick,
   onPrefetchChannel,
 }: {
   channelId: string
   messageId?: string
-  discordUrl: string
-  label: string
+  guildId: string | null
+  className?: string
+  children: ReactNode
+  onClick?: (e: React.MouseEvent) => void
   onPrefetchChannel?: (channelId: string) => void
 }) {
   const viewerHref = messageId ? `#${channelId}/${messageId}` : `#${channelId}`
+  const discordUrl = guildId
+    ? `https://discord.com/channels/${guildId}/${channelId}${messageId ? `/${messageId}` : ''}`
+    : null
+  const anchor = (
+    <a
+      className={className}
+      href={viewerHref}
+      onClick={onClick}
+      onMouseEnter={() => onPrefetchChannel?.(channelId)}
+    >
+      {children}
+    </a>
+  )
+  if (!discordUrl) return anchor
   return (
-    <Tooltip content={
+    <Tooltip interactive content={
       <div className="discord-link-tooltip">
         <div>View in archive (click)</div>
         <a href={discordUrl} target="_blank" rel="noopener noreferrer">
@@ -59,12 +78,7 @@ function DiscordLink({
         </a>
       </div>
     }>
-      <a
-        href={viewerHref}
-        onMouseEnter={() => onPrefetchChannel?.(channelId)}
-      >
-        {label}
-      </a>
+      {anchor}
     </Tooltip>
   )
 }
@@ -153,7 +167,17 @@ function renderInline(text: string, keyOffset: number, lookup: LookupData, onPre
       const chId = match[15]
       const ch = lookup.channels.get(chId)
       const chName = ch ? ch.name : 'unknown-channel'
-      parts.push(<span key={`ch-${key++}`} className="mention" onClick={() => { location.hash = chId }} onMouseEnter={() => onPrefetchChannel?.(chId)}>#{chName}</span>)
+      parts.push(
+        <DiscordLink
+          key={`ch-${key++}`}
+          channelId={chId}
+          guildId={lookup.guildId}
+          className="mention"
+          onPrefetchChannel={onPrefetchChannel}
+        >
+          #{chName}
+        </DiscordLink>,
+      )
     } else if (match[16]) {
       // user mention <@id> or <@!id>
       const user = lookup.users.get(match[17])
@@ -178,10 +202,40 @@ function isSystemMessage(type: number): boolean {
   return type === 7 || type === 18
 }
 
-function systemMessageText(msg: MessageType): string {
-  if (msg.type === 7) return `${msg.global_name || msg.username} joined the server.`
-  if (msg.type === 18) return `${msg.global_name || msg.username} pinned a message.`
-  return ''
+function PinnedSystemMessage({ msg, guildId }: { msg: MessageType; guildId: string | null }) {
+  const author = msg.global_name || msg.username
+  // Quirk: for type-18 pinned events, the DB stores the pinned message's ID in
+  // `reference_channel_id` (and `reference_message_id` is null). `msg.content`
+  // is Discord's own preview of the pinned content, so use it directly — no
+  // follow-up fetch needed.
+  const pinnedMsgId = msg.reference_message_id || msg.reference_channel_id
+  const snippet = msg.content
+    ? (msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content)
+    : null
+
+  const body = snippet
+    ? <><span className="pin-author">{author}</span> pinned <strong>{snippet}</strong></>
+    : <><span className="pin-author">{author}</span> pinned a message</>
+
+  return (
+    <span className="pinned-system">
+      <span className="pin-icon" aria-hidden>📌</span>
+      {pinnedMsgId
+        ? (
+          <DiscordLink channelId={msg.channel_id} messageId={pinnedMsgId} guildId={guildId}>
+            {body}
+          </DiscordLink>
+        )
+        : <span>{body}</span>}
+    </span>
+  )
+}
+
+function renderSystemMessage(msg: MessageType, guildId: string | null): ReactNode {
+  const author = msg.global_name || msg.username
+  if (msg.type === 7) return <em>{author} joined the server.</em>
+  if (msg.type === 18) return <PinnedSystemMessage msg={msg} guildId={guildId} />
+  return null
 }
 
 interface ReplySnippetProps {
@@ -227,15 +281,21 @@ export default function MessageComponent({ message, compact, targeted, onNavigat
   if (isSystemMessage(message.type)) {
     return (
       <div className="message system-message" data-message-id={message.id}>
-        <em>{systemMessageText(message)}</em>
-        <a className="timestamp" href={`#${message.channel_id}/${message.id}`}>{formatTimestamp(message.timestamp)}</a>
+        {renderSystemMessage(message, lookup.guildId)}
+        <DiscordLink
+          channelId={message.channel_id}
+          messageId={message.id}
+          guildId={lookup.guildId}
+          className="timestamp"
+        >
+          {formatTimestamp(message.timestamp)}
+        </DiscordLink>
       </div>
     )
   }
 
   const displayName = message.global_name || message.username
   const avatar = avatarUrl(message.author_id, message.avatar)
-  const permalink = `#${message.channel_id}/${message.id}`
 
   return (
     <div className={`message${compact ? ' compact' : ''}${targeted ? ' targeted' : ''}`} data-message-id={message.id}>
@@ -245,9 +305,14 @@ export default function MessageComponent({ message, compact, targeted, onNavigat
       <div className="message-body">
         {compact ? (
           <div className="compact-gutter">
-            <a className="compact-timestamp" href={permalink} title={formatTimestamp(message.timestamp)}>
+            <DiscordLink
+              channelId={message.channel_id}
+              messageId={message.id}
+              guildId={lookup.guildId}
+              className="compact-timestamp"
+            >
               {new Date(message.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-            </a>
+            </DiscordLink>
           </div>
         ) : (
           <img className="avatar" src={avatar} alt="" width={40} height={40} />
@@ -256,7 +321,14 @@ export default function MessageComponent({ message, compact, targeted, onNavigat
           {!compact && (
             <div className="message-header">
               <span className="author-name">{displayName}</span>
-              <a className="timestamp" href={permalink}>{formatTimestamp(message.timestamp)}</a>
+              <DiscordLink
+                channelId={message.channel_id}
+                messageId={message.id}
+                guildId={lookup.guildId}
+                className="timestamp"
+              >
+                {formatTimestamp(message.timestamp)}
+              </DiscordLink>
               {message.edited_timestamp && <span className="edited">(edited)</span>}
             </div>
           )}

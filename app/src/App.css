@@ -876,13 +876,26 @@
   }
 }
 
+/* Interactive tooltip variant — stays open while cursor is over it */
+.tooltip-interactive {
+  pointer-events: auto;
+  max-width: 360px;
+}
+.tooltip-interactive a {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+.tooltip-interactive a:hover {
+  text-decoration: none;
+}
+
 /* Freshness footer */
 .freshness-footer {
   display: flex;
-  gap: 4px;
-  padding: 8px 16px;
+  gap: 6px;
+  padding: 10px 16px;
   border-top: 1px solid var(--bg-tertiary);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-secondary);
   cursor: default;
   align-items: center;
@@ -896,8 +909,9 @@
 .freshness-tooltip {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 240px;
+  gap: 6px;
+  min-width: 260px;
+  font-size: 13px;
 }
 .freshness-row {
   display: flex;
@@ -915,13 +929,58 @@
 .freshness-links {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+.freshness-meta {
+  color: var(--text-secondary);
+  font-weight: normal;
+}
+.freshness-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.freshness-hint code {
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
 }
 
-/* Discord link tooltip — needs clickable inner link, so override pointer-events */
+/* Discord link tooltip (same as interactive variant but a bit tighter) */
 .discord-link-tooltip {
-  pointer-events: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  font-size: 13px;
+}
+
+/* Pinned-message system rendering */
+.pinned-system {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.pin-icon {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.pin-author {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+/* Pinned link blends into the system message — no bright blue / underline */
+.pinned-system a {
+  color: inherit;
+  text-decoration: none;
+}
+.pinned-system a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+}
+.pinned-system a strong {
+  color: var(--text-primary);
+  font-weight: 500;
 }
