@@ -2,12 +2,29 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { HotkeysProvider, ShortcutsModal, Omnibar, LookupModal, SequenceModal, SpeedDial, useAction, useActions } from 'use-kbd'
 import 'use-kbd/styles.css'
 import type { Channel } from './types'
-import { useChannels, useUsers } from './hooks'
+import { useChannels, useMeta, useUsers } from './hooks'
 import { LookupContext } from './context'
 import ChannelList from './components/ChannelList'
 import MessageList from './components/MessageList'
 import SearchPanel from './components/SearchPanel'
+import FreshnessFooter from './components/FreshnessFooter'
 import './App.css'
+
+function pickDefaultChannel(channels: Channel[]): Channel | null {
+  if (!channels.length) return null
+  const configured = import.meta.env.VITE_DEFAULT_CHANNEL
+  if (configured) {
+    const match = channels.find(c => c.id === configured || c.name === configured)
+    if (match) return match
+  }
+  const general = channels.find(c => c.name === 'general')
+  if (general) return general
+  const withNewest = channels.filter(c => c.newest)
+  if (withNewest.length) {
+    return withNewest.reduce((a, b) => (a.newest! > b.newest! ? a : b))
+  }
+  return channels[0]
+}
 
 function parseHash(): { channelId: string | null; messageId: string | null } {
   const hash = window.location.hash.replace('#', '')
@@ -83,6 +100,7 @@ function useKeyboardNav({
 function AppContent() {
   const { data: channels = [] } = useChannels()
   const { data: users = [] } = useUsers()
+  const { data: meta } = useMeta()
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -91,7 +109,8 @@ function AppContent() {
   const lookup = useMemo(() => ({
     channels: new Map(channels.map(c => [c.id, c])),
     users: new Map(users.map(u => [u.id, u])),
-  }), [channels, users])
+    guildId: meta?.guild_id ?? null,
+  }), [channels, users, meta])
 
   const navigateToHash = useCallback(() => {
     if (!channels.length) return
@@ -100,6 +119,13 @@ function AppContent() {
       const ch = channels.find(c => c.id === channelId)
       setActiveChannel(ch || { id: channelId, name: '', type: 0, position: 0, message_count: 0, oldest: null, newest: null })
       setTargetMessageId(messageId)
+    } else {
+      const def = pickDefaultChannel(channels)
+      if (def) {
+        setActiveChannel(def)
+        setTargetMessageId(null)
+        window.location.hash = def.id
+      }
     }
   }, [channels])
 
@@ -167,6 +193,7 @@ function AppContent() {
             activeChannelId={activeChannel?.id ?? null}
             onSelectChannel={handleSelectChannelMobile}
           />
+          <FreshnessFooter />
         </div>
         <div className="main">
           <div className="main-header">

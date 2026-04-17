@@ -13,6 +13,8 @@
 interface Env {
 	DB: D1Database
 	CORS_ORIGIN: string
+	GUILD_ID?: string
+	ARCHIVE_DB_URL?: string
 }
 
 function corsHeaders(env: Env): HeadersInit {
@@ -321,6 +323,23 @@ async function getUsers(db: D1Database): Promise<unknown[]> {
 	return results
 }
 
+async function getMeta(env: Env): Promise<unknown> {
+	const rows = await env.DB.batch([
+		env.DB.prepare("SELECT MAX(timestamp) as ts FROM messages"),
+		env.DB.prepare("SELECT COUNT(*) as n FROM messages"),
+		env.DB.prepare("SELECT COUNT(*) as n FROM channels WHERE type != 11"),
+		env.DB.prepare("SELECT COUNT(*) as n FROM users"),
+	])
+	return {
+		latest_message_ts: (rows[0].results[0] as { ts: string | null }).ts,
+		total_messages: (rows[1].results[0] as { n: number }).n,
+		total_channels: (rows[2].results[0] as { n: number }).n,
+		total_users: (rows[3].results[0] as { n: number }).n,
+		guild_id: env.GUILD_ID || null,
+		archive_db_url: env.ARCHIVE_DB_URL || null,
+	}
+}
+
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		if (request.method === "OPTIONS") {
@@ -364,6 +383,11 @@ export default {
 			// GET /api/users
 			if (path === "/api/users") {
 				return json(await getUsers(env.DB), env)
+			}
+
+			// GET /api/meta
+			if (path === "/api/meta") {
+				return json(await getMeta(env), env)
 			}
 
 			return json({ error: "not found" }, env, 404)

@@ -81,3 +81,12 @@ export interface User {
   global_name: string | null
   avatar: string | null
 }
+
+export interface Meta {
+  latest_message_ts: string | null
+  total_messages: number
+  total_channels: number
+  total_users: number
+  guild_id: string | null
+  archive_db_url: string | null
+}

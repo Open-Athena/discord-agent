@@ -1,6 +1,7 @@
-import type { Channel, Message, SearchResult, User } from './types'
+import type { Channel, Message, Meta, SearchResult, User } from './types'
 
-const BASE = (import.meta.env.VITE_API_BASE || '') + '/api'
+export const API_BASE = (import.meta.env.VITE_API_BASE || '') + '/api'
+const BASE = API_BASE
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -40,4 +41,8 @@ export function fetchUsers(): Promise<User[]> {
 export function searchMessages(query: string, limit = 50): Promise<SearchResult[]> {
   const search = new URLSearchParams({ q: query, limit: String(limit) })
   return fetchJson(`${BASE}/search?${search}`)
+}
+
+export function fetchMeta(): Promise<Meta> {
+  return fetchJson(`${BASE}/meta`)
 }
