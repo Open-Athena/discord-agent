@@ -4,10 +4,11 @@ import {
   fetchMessage,
   fetchMessages,
   fetchMessagesAround,
+  fetchMeta,
   fetchUsers,
   searchMessages,
 } from './api'
-import type { Channel, Message, SearchResult, User } from './types'
+import type { Channel, Message, Meta, SearchResult, User } from './types'
 
 export function useChannels() {
   return useQuery<Channel[]>({
@@ -22,6 +23,14 @@ export function useUsers() {
     queryKey: ['users'],
     queryFn: fetchUsers,
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useMeta() {
+  return useQuery<Meta>({
+    queryKey: ['meta'],
+    queryFn: fetchMeta,
+    staleTime: 60 * 1000,
   })
 }
 

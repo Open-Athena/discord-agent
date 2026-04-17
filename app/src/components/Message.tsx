@@ -5,6 +5,70 @@ import { useLookup } from '../context'
 import { useMessage, usePrefetchMessages } from '../hooks'
 import Tooltip from './Tooltip'
 
+const DISCORD_URL_RE = /^https:\/\/discord\.com\/channels\/(\d+)\/(\d+)(?:\/(\d+))?(?:\/|$|\?|#)/
+
+function parseDiscordLink(url: string): { guildId: string; channelId: string; messageId?: string } | null {
+  const m = url.match(DISCORD_URL_RE)
+  if (!m) return null
+  return { guildId: m[1], channelId: m[2], messageId: m[3] }
+}
+
+function renderLink(
+  url: string,
+  text: string,
+  key: string,
+  lookup: LookupData,
+  onPrefetchChannel?: (channelId: string) => void,
+): ReactNode {
+  const parsed = parseDiscordLink(url)
+  if (parsed && lookup.guildId && parsed.guildId === lookup.guildId) {
+    return (
+      <DiscordLink
+        key={key}
+        channelId={parsed.channelId}
+        messageId={parsed.messageId}
+        discordUrl={url}
+        label={text}
+        onPrefetchChannel={onPrefetchChannel}
+      />
+    )
+  }
+  return <a key={key} href={url} target="_blank" rel="noopener noreferrer">{text}</a>
+}
+
+function DiscordLink({
+  channelId,
+  messageId,
+  discordUrl,
+  label,
+  onPrefetchChannel,
+}: {
+  channelId: string
+  messageId?: string
+  discordUrl: string
+  label: string
+  onPrefetchChannel?: (channelId: string) => void
+}) {
+  const viewerHref = messageId ? `#${channelId}/${messageId}` : `#${channelId}`
+  return (
+    <Tooltip content={
+      <div className="discord-link-tooltip">
+        <div>View in archive (click)</div>
+        <a href={discordUrl} target="_blank" rel="noopener noreferrer">
+          Open in Discord ↗
+        </a>
+      </div>
+    }>
+      <a
+        href={viewerHref}
+        onMouseEnter={() => onPrefetchChannel?.(channelId)}
+      >
+        {label}
+      </a>
+    </Tooltip>
+  )
+}
+
 function avatarUrl(authorId: string, avatar: string | null): string {
   if (avatar) {
     return `https://cdn.discordapp.com/avatars/${authorId}/${avatar}.png?size=32`
@@ -80,10 +144,10 @@ function renderInline(text: string, keyOffset: number, lookup: LookupData, onPre
       parts.push(<span key={`sp-${key++}`} className="spoiler">{match[9]}</span>)
     } else if (match[10]) {
       // markdown link [text](url)
-      parts.push(<a key={`a-${key++}`} href={match[12]} target="_blank" rel="noopener noreferrer">{match[11]}</a>)
+      parts.push(renderLink(match[12], match[11], `a-${key++}`, lookup, onPrefetchChannel))
     } else if (match[13]) {
       // bare link
-      parts.push(<a key={`a-${key++}`} href={match[13]} target="_blank" rel="noopener noreferrer">{match[13]}</a>)
+      parts.push(renderLink(match[13], match[13], `a-${key++}`, lookup, onPrefetchChannel))
     } else if (match[14]) {
       // channel mention <#id>
       const chId = match[15]

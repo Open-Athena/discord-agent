@@ -875,3 +875,53 @@
     height: auto !important;
   }
 }
+
+/* Freshness footer */
+.freshness-footer {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--bg-tertiary);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: default;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.freshness-dot {
+  opacity: 0.6;
+}
+.freshness-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+}
+.freshness-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.freshness-label {
+  color: var(--text-secondary);
+}
+.freshness-divider {
+  border: none;
+  border-top: 1px solid var(--bg-tertiary);
+  margin: 4px 0;
+}
+.freshness-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Discord link tooltip — needs clickable inner link, so override pointer-events */
+.discord-link-tooltip {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
