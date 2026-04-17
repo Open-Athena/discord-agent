@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchChannels,
   fetchMessage,
@@ -60,6 +60,10 @@ export function useMessages(channelId: string, targetMessageId?: string | null) 
       const msgs = await fetchMessages(channelId, { limit: 50 })
       return [...msgs].reverse()
     },
+    // Keep showing the previous channel's messages while the new query runs —
+    // prevents the "Loading..." flash when clicking a permalink within the
+    // same channel (targetMessageId change triggers a new query).
+    placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
   })
 }
