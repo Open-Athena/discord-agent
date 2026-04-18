@@ -101,6 +101,9 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare_token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id }}
         DB_PATH: ${{ github.workspace }}/${{ inputs.db_path }}
+        # d1-sync.py reads these to construct the sync_runs row's run_url.
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
 
     # Full reimport
     - name: Full D1 reimport
