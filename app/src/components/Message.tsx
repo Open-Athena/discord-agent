@@ -245,23 +245,27 @@ interface ReplySnippetProps {
 function ReplySnippet({ messageId }: ReplySnippetProps) {
   const { data: refMsg } = useMessage(messageId)
 
-  if (!refMsg) return <div className="reply-snippet">...</div>
+  if (!refMsg) return <div className="reply-snippet">…</div>
 
   const displayName = refMsg.global_name || refMsg.username
   const snippet = refMsg.content.length > 100
-    ? refMsg.content.slice(0, 100) + '...'
+    ? refMsg.content.slice(0, 100) + '…'
     : refMsg.content
 
   return (
-    <div className="reply-snippet">
+    <div
+      className="reply-snippet"
+      onClick={() => { location.hash = `${refMsg.channel_id}/${refMsg.id}` }}
+      role="link"
+    >
       <img
         className="reply-avatar"
         src={avatarUrl(refMsg.author_id, refMsg.avatar)}
         alt=""
-        width={16}
-        height={16}
+        width={18}
+        height={18}
       />
-      <span className="reply-author">{displayName}</span>
+      <span className="reply-author">@{displayName}</span>
       <span className="reply-text">{snippet}</span>
     </div>
   )

@@ -107,7 +107,7 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
     overscan: 20,
   })
 
-  function scrollToTarget(idx: number) {
+  function scrollToTarget(idx: number, smooth = false) {
     const scrollEl = parentRef.current
     if (!scrollEl) return
     virtualizer.scrollToIndex(idx, { align: 'start' })
@@ -117,18 +117,20 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
       const viewportH = scrollEl.clientHeight
       const desiredOffset = targetItem.start - viewportH * 0.3
       const maxScroll = scrollEl.scrollHeight - viewportH
-      if (maxScroll - desiredOffset < 50) {
-        scrollEl.scrollTop = maxScroll
-      } else {
-        scrollEl.scrollTop = Math.max(0, desiredOffset)
-      }
+      const top = (maxScroll - desiredOffset < 50)
+        ? maxScroll
+        : Math.max(0, desiredOffset)
+      scrollEl.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
     })
   }
 
   function highlightTarget() {
     if (!targetMessageId) return
-    const el = parentRef.current?.querySelector(`[data-message-id="${targetMessageId}"]`)
+    const el = parentRef.current?.querySelector(`[data-message-id="${targetMessageId}"]`) as HTMLElement | null
     if (el) {
+      // Remove + reflow + re-add so the animation replays on repeat clicks.
+      el.classList.remove('highlight')
+      void el.offsetWidth
       el.classList.add('highlight')
       setTimeout(() => el.classList.remove('highlight'), 3000)
     }
@@ -142,7 +144,8 @@ export default function MessageList({ channelId, targetMessageId, onNavigate }: 
       const idx = rows.findIndex(r => r.key === targetMessageId)
       if (idx >= 0) {
         targetIndexRef.current = idx
-        scrollToTarget(idx)
+        // Smooth on nav-to-target; the image-load readjustments below stay instant.
+        scrollToTarget(idx, true)
         setInitialScrollDone(true)
         setTimeout(highlightTarget, 200)
         return
