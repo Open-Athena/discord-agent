@@ -74,6 +74,9 @@ export interface DiscordChannel {
 	name: string
 	type: number
 	position?: number
+	// Present on text-like channels / threads. Lets us skip fetching when
+	// Discord's own "newest message id" is already <= our D1 cursor.
+	last_message_id?: string | null
 }
 
 /** Perform a Discord API GET, retrying on 429. Returns parsed JSON or null on 403. */
