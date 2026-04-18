@@ -253,6 +253,7 @@
 
 /* Messages */
 .message {
+  position: relative;
   padding: 2px 16px;
   transition: background 0.1s;
 }
@@ -337,7 +338,7 @@
 
 .author-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-primary);
   cursor: pointer;
 }
@@ -347,7 +348,7 @@
 }
 
 .timestamp {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
   text-decoration: none;
 }
@@ -359,9 +360,9 @@
 }
 
 .message-text {
-  color: var(--text-secondary);
-  font-size: 15px;
-  line-height: 1.375rem;
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.5;
   word-wrap: break-word;
   white-space: pre-wrap;
 }
@@ -422,43 +423,59 @@
   color: var(--text-secondary);
 }
 
-/* Reply */
+/* Reply snippet — Discord-style ⌐ connector from message avatar up to reply bar */
 .reply-snippet {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 0 2px 56px;
+  gap: 6px;
+  padding: 2px 0 2px 68px;
   margin-bottom: 2px;
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
-
+/* Curved ⌐ connector: starts at the middle of the reply row, curves up-left,
+   and drops down next to the main message's avatar. The .message has
+   position: relative so absolute coords here are relative to the message. */
 .reply-snippet::before {
   content: '';
-  display: inline-block;
-  width: 2px;
-  height: 12px;
-  background: var(--text-muted);
-  border-radius: 1px;
-  margin-right: 4px;
+  position: absolute;
+  left: 34px;         /* avatar is at x=16..56; line sits at its vertical center */
+  top: 14px;          /* mid of the reply row */
+  height: 16px;       /* down to just above the avatar top */
+  width: 30px;        /* across to just before the reply-avatar */
+  border-left: 2px solid var(--text-muted);
+  border-top: 2px solid var(--text-muted);
+  border-top-left-radius: 8px;
+  pointer-events: none;
+}
+.reply-snippet:hover {
+  color: var(--text-primary);
+}
+.reply-snippet:hover::before {
+  border-color: var(--text-secondary);
 }
 
 .reply-avatar {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .reply-author {
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-link);
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .reply-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-muted);
 }
 
 /* Attachments */
