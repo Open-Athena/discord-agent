@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useMeta } from '../hooks'
+import { useMeta, useTick } from '../hooks'
 import Tooltip from './Tooltip'
 
 function relativeAgo(iso: string): string {
@@ -47,6 +47,9 @@ function useArchiveDbInfo(url: string | null) {
 export default function FreshnessFooter() {
   const { data: meta } = useMeta()
   const archiveInfo = useArchiveDbInfo(meta?.archive_db_url ?? null)
+  // Re-render every 15s so the "Nm ago" strings advance between /api/meta
+  // polls (which fire every 60s). Cheap — just bumps a counter.
+  useTick(15 * 1000)
   if (!meta) return null
 
   const sync = meta.latest_sync
