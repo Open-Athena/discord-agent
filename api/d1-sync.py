@@ -21,6 +21,8 @@ import subprocess
 import sqlite3
 import sys
 import tempfile
+import time
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
@@ -83,8 +85,11 @@ def escape_sql(val: object) -> str:
     return f"'{s}'"
 
 
-def generate_sync_sql(db_path: str, after_id: str | None) -> str:
-    """Generate INSERT OR REPLACE SQL for new data since after_id."""
+def generate_sync_sql(db_path: str, after_id: str | None) -> tuple[str, int]:
+    """Generate INSERT OR REPLACE SQL for new data since after_id.
+
+    Returns (sql, new_message_count). Empty SQL when nothing new.
+    """
     db = sqlite3.connect(db_path)
     db.row_factory = sqlite3.Row
     lines: list[str] = []
@@ -102,7 +107,7 @@ def generate_sync_sql(db_path: str, after_id: str | None) -> str:
 
     if not msg_ids:
         db.close()
-        return ""
+        return "", 0
 
     # Collect all new user IDs (from new messages)
     new_author_ids = list({m["author_id"] for m in msgs if m["author_id"]})
@@ -156,7 +161,31 @@ def generate_sync_sql(db_path: str, after_id: str | None) -> str:
     lines.append("INSERT INTO messages_fts(messages_fts) VALUES('rebuild');")
 
     db.close()
-    return "\n".join(lines)
+    return "\n".join(lines), len(msg_ids)
+
+
+def _sql_escape(s: str | None) -> str:
+    """Simple SQL literal escape for embedding into the generated script."""
+    if s is None:
+        return "NULL"
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _sync_run_row_sql(
+    source: str,
+    finished_at: str,
+    msg_count: int,
+    duration_ms: int,
+    run_url: str | None,
+    status: str,
+) -> str:
+    """Build an INSERT row for the sync_runs table."""
+    run_id = f"{source}:{os.environ.get('GITHUB_RUN_ID') or finished_at}"
+    return (
+        f"INSERT INTO sync_runs (id, finished_at, source, run_url, messages_added, duration_ms, status) "
+        f"VALUES ({_sql_escape(run_id)}, {_sql_escape(finished_at)}, {_sql_escape(source)}, "
+        f"{_sql_escape(run_url)}, {msg_count}, {duration_ms}, {_sql_escape(status)});"
+    )
 
 
 @command()
@@ -164,19 +193,49 @@ def generate_sync_sql(db_path: str, after_id: str | None) -> str:
 @option('-r', '--remote', is_flag=True, help='Sync to remote D1 (default: local)')
 @option('-n', '--dry-run', is_flag=True, help='Print SQL without applying')
 def main(db_path: str, remote: bool, dry_run: bool):
+    t0 = time.time()
     after_id = get_last_synced_id(remote)
     if after_id:
         print(f"Last synced message ID: {after_id}")
     else:
         print("No previous sync found, syncing all data")
 
-    sql = generate_sync_sql(db_path, after_id)
+    sql, msg_count = generate_sync_sql(db_path, after_id)
     if not sql:
         print("No new messages to sync")
+        # Still log a no-op run so the footer shows "synced moments ago" —
+        # a healthy quiet period shouldn't look like a failed pipeline.
+        finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        duration_ms = int((time.time() - t0) * 1000)
+        run_url = (
+            f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+            if os.environ.get('GITHUB_RUN_ID') and os.environ.get('GITHUB_REPOSITORY')
+            else None
+        )
+        if not dry_run and os.environ.get('GITHUB_RUN_ID'):
+            noop_sql = _sync_run_row_sql('gha', finished_at, 0, duration_ms, run_url, 'ok')
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
+                f.write(noop_sql)
+                sql_path = f.name
+            cmd = ["npx", "wrangler", "d1", "execute", DB_NAME, f"--file={sql_path}", "--yes"]
+            if remote:
+                cmd.append("--remote")
+            subprocess.run(cmd, cwd=Path(__file__).parent)
+            Path(sql_path).unlink()
         return
 
     line_count = sql.count("\n") + 1
-    print(f"Generated {line_count} SQL statements")
+    print(f"Generated {line_count} SQL statements ({msg_count} new messages)")
+
+    # Append a sync_runs row so the viewer's freshness indicator credits GHA.
+    finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    duration_ms = int((time.time() - t0) * 1000)
+    run_url = (
+        f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+        if os.environ.get('GITHUB_RUN_ID') and os.environ.get('GITHUB_REPOSITORY')
+        else None
+    )
+    sql = sql + "\n" + _sync_run_row_sql('gha', finished_at, msg_count, duration_ms, run_url, 'ok')
 
     if dry_run:
         print(sql[:2000])
