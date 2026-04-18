@@ -116,6 +116,18 @@ export async function fetchGuildChannels(
 	return channels
 }
 
+/** Fetch all active (non-archived) threads in the guild. */
+export async function fetchActiveThreads(
+	guildId: string,
+	token: string,
+): Promise<DiscordChannel[]> {
+	const body = await apiGet<{ threads: DiscordChannel[] }>(
+		`/guilds/${guildId}/threads/active`,
+		token,
+	)
+	return body?.threads ?? []
+}
+
 /** Fetch up to 100 messages newer than `afterId` (null = newest 100). */
 export async function fetchMessagesAfter(
 	channelId: string,
