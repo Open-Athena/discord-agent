@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchChannels,
@@ -26,11 +27,26 @@ export function useUsers() {
   })
 }
 
+/** Returns a counter that increments every `intervalMs`, forcing re-render.
+ * Use when a component renders a value (e.g. "Nm ago") that's derived from
+ * the wall clock and should advance without waiting for data to change. */
+export function useTick(intervalMs: number): number {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setN((x) => x + 1), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return n
+}
+
 export function useMeta() {
   return useQuery<Meta>({
     queryKey: ['meta'],
     queryFn: fetchMeta,
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    // Poll every 60s so new CFW/GHA sync_runs show up without a reload.
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
   })
 }
 
