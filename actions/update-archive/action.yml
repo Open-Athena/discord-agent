@@ -116,16 +116,20 @@ runs:
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id }}
         DB_PATH: ${{ github.workspace }}/${{ inputs.db_path }}
 
-    # Commit updated archive.dvc if changed
+    # Commit updated archive.dvc if changed.
+    # Stage tracked changes first, then check the index — `git diff --quiet`
+    # alone reports the .discord-agent submodule as dirty (untracked
+    # node_modules etc.) even when nothing in the parent actually changed,
+    # which made `git commit` fail with "no changes added to commit".
     - name: Commit archive update
       shell: bash
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        if git diff --quiet; then
-          echo "No archive changes"
+        git add -u
+        if git diff --cached --quiet; then
+          echo "No archive changes to commit"
         else
-          git add -u
           git commit -m "Update archive $(date -u +%Y-%m-%d)"
           git push
         fi
