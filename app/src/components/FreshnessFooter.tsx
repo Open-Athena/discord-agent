@@ -47,18 +47,37 @@ function useArchiveDbInfo(url: string | null) {
 export default function FreshnessFooter() {
   const { data: meta } = useMeta()
   const archiveInfo = useArchiveDbInfo(meta?.archive_db_url ?? null)
-  if (!meta || !meta.latest_message_ts) return null
+  if (!meta) return null
 
-  const ago = relativeAgo(meta.latest_message_ts)
-  const abs = absolute(meta.latest_message_ts)
+  const sync = meta.latest_sync
+  const syncAgo = sync ? relativeAgo(sync.finished_at) : null
+  const syncAbs = sync ? absolute(sync.finished_at) : null
+  const msgAgo = meta.latest_message_ts ? relativeAgo(meta.latest_message_ts) : null
+  const msgAbs = meta.latest_message_ts ? absolute(meta.latest_message_ts) : null
+
+  // Footer text: prefer "synced" (DB freshness) when available; fall back
+  // to the latest-message timestamp.
+  const primaryLabel = syncAgo ? `Synced ${syncAgo}` : msgAgo ? `Latest msg ${msgAgo}` : 'Loading…'
 
   return (
     <Tooltip interactive content={
       <div className="freshness-tooltip">
-        <div className="freshness-row">
-          <span className="freshness-label">Latest msg</span>
-          <span>{abs} ({ago})</span>
-        </div>
+        {sync && syncAbs && (
+          <div className="freshness-row">
+            <span className="freshness-label">Last sync</span>
+            <span>
+              {syncAbs} ({syncAgo})
+              {sync.run_url ? <> · <a href={sync.run_url} target="_blank" rel="noopener noreferrer">{sync.source}</a></> : <> · {sync.source}</>}
+              {sync.messages_added > 0 ? ` · +${sync.messages_added}` : ''}
+            </span>
+          </div>
+        )}
+        {msgAbs && (
+          <div className="freshness-row">
+            <span className="freshness-label">Latest msg</span>
+            <span>{msgAbs} ({msgAgo})</span>
+          </div>
+        )}
         <div className="freshness-row">
           <span className="freshness-label">Messages</span>
           <span>{meta.total_messages.toLocaleString()}</span>
@@ -94,7 +113,7 @@ export default function FreshnessFooter() {
       </div>
     }>
       <div className="freshness-footer">
-        <span>Latest msg {ago}</span>
+        <span>{primaryLabel}</span>
         <span className="freshness-dot">·</span>
         <span>{meta.total_messages.toLocaleString()} msgs</span>
       </div>

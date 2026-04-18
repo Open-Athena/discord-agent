@@ -87,3 +87,32 @@ export async function latestMessageIdsByChannel(
 	for (const r of results) out.set(r.channel_id, r.max_id)
 	return out
 }
+
+export interface SyncRun {
+	id: string
+	finished_at: string
+	source: "cfw" | "gha" | "cli"
+	run_url?: string | null
+	messages_added: number
+	duration_ms: number
+	status: "ok" | "error"
+}
+
+/** Append a row to the sync_runs log. */
+export async function recordSyncRun(db: D1Database, row: SyncRun): Promise<void> {
+	await db
+		.prepare(
+			`INSERT INTO sync_runs (id, finished_at, source, run_url, messages_added, duration_ms, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			row.id,
+			row.finished_at,
+			row.source,
+			row.run_url ?? null,
+			row.messages_added,
+			row.duration_ms,
+			row.status,
+		)
+		.run()
+}
