@@ -82,6 +82,15 @@ export interface User {
   avatar: string | null
 }
 
+export interface SyncRun {
+  finished_at: string
+  source: 'cfw' | 'gha' | 'cli'
+  run_url: string | null
+  messages_added: number
+  duration_ms: number
+  status: 'ok' | 'error'
+}
+
 export interface Meta {
   latest_message_ts: string | null
   total_messages: number
@@ -89,4 +98,5 @@ export interface Meta {
   total_users: number
   guild_id: string | null
   archive_db_url: string | null
+  latest_sync: SyncRun | null
 }

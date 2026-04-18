@@ -17,6 +17,7 @@ import {
 import {
 	insertMessages,
 	latestMessageIdsByChannel,
+	recordSyncRun,
 	upsertChannel,
 	upsertUsers,
 } from "./upsert"
@@ -64,9 +65,20 @@ export async function scheduled(
 		touched.push(`#${ch.name}=+${inserted}`)
 	}
 
+	const elapsed = Date.now() - t0
+	const finishedAt = new Date().toISOString()
+	await recordSyncRun(env.DB, {
+		id: `cfw:${finishedAt}`,
+		finished_at: finishedAt,
+		source: "cfw",
+		messages_added: totalNew,
+		duration_ms: elapsed,
+		status: "ok",
+	})
+
 	console.log(
 		`[cron] +${totalNew} msgs across ${touched.length}/${textChannels.length} channels` +
-			` in ${Date.now() - t0}ms` +
+			` in ${elapsed}ms` +
 			(touched.length ? ` (${touched.join(", ")})` : ""),
 	)
 }

@@ -96,6 +96,19 @@ CREATE TABLE IF NOT EXISTS threads (
     FOREIGN KEY (parent_channel_id) REFERENCES channels(id)
 );
 
+-- Pipeline run log: who synced D1 (cfw cron / gha / cli), when, how many
+-- new rows. The viewer's freshness indicator queries the latest row.
+CREATE TABLE IF NOT EXISTS sync_runs (
+    id TEXT PRIMARY KEY,                -- "cfw:<iso>" or "gha:<run_id>" or "cli:<iso>"
+    finished_at TEXT NOT NULL,
+    source TEXT NOT NULL,               -- 'cfw' | 'gha' | 'cli'
+    run_url TEXT,
+    messages_added INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    status TEXT NOT NULL DEFAULT 'ok'   -- 'ok' | 'error'
+);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_finished_at ON sync_runs(finished_at);
+
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_author_id ON messages(author_id);

@@ -332,7 +332,18 @@ async function getMeta(env: Env): Promise<unknown> {
 		env.DB.prepare("SELECT COUNT(*) as n FROM messages"),
 		env.DB.prepare("SELECT COUNT(*) as n FROM channels WHERE type != 11"),
 		env.DB.prepare("SELECT COUNT(*) as n FROM users"),
+		env.DB.prepare(
+			"SELECT finished_at, source, run_url, messages_added, duration_ms, status FROM sync_runs ORDER BY finished_at DESC LIMIT 1",
+		),
 	])
+	const latestSync = rows[4].results[0] as {
+		finished_at: string
+		source: string
+		run_url: string | null
+		messages_added: number
+		duration_ms: number
+		status: string
+	} | undefined
 	return {
 		latest_message_ts: (rows[0].results[0] as { ts: string | null }).ts,
 		total_messages: (rows[1].results[0] as { n: number }).n,
@@ -340,6 +351,7 @@ async function getMeta(env: Env): Promise<unknown> {
 		total_users: (rows[3].results[0] as { n: number }).n,
 		guild_id: env.GUILD_ID || null,
 		archive_db_url: env.ARCHIVE_DB_URL || null,
+		latest_sync: latestSync ?? null,
 	}
 }
 
