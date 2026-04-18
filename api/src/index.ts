@@ -10,11 +10,14 @@
  *   GET /api/users
  */
 
+import { scheduled } from "./scheduled"
+
 interface Env {
 	DB: D1Database
 	CORS_ORIGIN: string
 	GUILD_ID?: string
 	ARCHIVE_DB_URL?: string
+	DISCORD_TOKEN?: string
 }
 
 function corsHeaders(env: Env): HeadersInit {
@@ -341,6 +344,7 @@ async function getMeta(env: Env): Promise<unknown> {
 }
 
 export default {
+	scheduled,
 	async fetch(request: Request, env: Env): Promise<Response> {
 		if (request.method === "OPTIONS") {
 			return new Response(null, { headers: corsHeaders(env) })
