@@ -972,15 +972,17 @@
   font-weight: 500;
 }
 /* Pinned link blends into the system message — no bright blue / underline */
-.pinned-system a {
-  color: inherit;
+.pinned-system a,
+.pinned-system a:visited {
+  color: var(--text-secondary);
   text-decoration: none;
 }
 .pinned-system a:hover {
   text-decoration: underline;
   text-decoration-color: var(--text-muted);
 }
-.pinned-system a strong {
+.pinned-system a strong,
+.pinned-system a:visited strong {
   color: var(--text-primary);
   font-weight: 500;
 }
