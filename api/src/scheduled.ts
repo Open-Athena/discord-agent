@@ -10,15 +10,20 @@
  */
 
 import {
+	fetchActiveThreads,
 	fetchGuildChannels,
 	paginateNewMessages,
 	TEXT_CHANNEL_TYPES,
 } from "./discord"
 import {
+	insertAttachments,
+	insertEmbeds,
 	insertMessages,
+	insertReactions,
 	latestMessageIdsByChannel,
 	recordSyncRun,
 	upsertChannel,
+	upsertThreadsFromMessages,
 	upsertUsers,
 } from "./upsert"
 
@@ -46,14 +51,21 @@ export async function scheduled(
 	console.log(`[cron] tick at ${new Date(event.scheduledTime).toISOString()}`)
 
 	const cursors = await latestMessageIdsByChannel(env.DB)
-	const channels = await fetchGuildChannels(guildId, token)
-	const textChannels = channels
-		.filter((c) => TEXT_CHANNEL_TYPES.has(c.type))
+	const [parentChannels, activeThreads] = await Promise.all([
+		fetchGuildChannels(guildId, token),
+		fetchActiveThreads(guildId, token),
+	])
+	// Iterate parents (text-like) + active threads. Already-archived threads
+	// in D1 won't be re-fetched unless they appear here, but they're frozen
+	// by definition — D1 is correct.
+	const seen = new Set<string>()
+	const channelList = [...parentChannels.filter((c) => TEXT_CHANNEL_TYPES.has(c.type)), ...activeThreads]
+		.filter((c) => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
 		.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
 
 	let totalNew = 0
 	const touched: string[] = []
-	for (const ch of textChannels) {
+	for (const ch of channelList) {
 		const after = cursors.get(ch.id) ?? null
 		const newMsgs = await paginateNewMessages(ch.id, after, token)
 		if (newMsgs.length === 0) continue
@@ -61,6 +73,12 @@ export async function scheduled(
 		await upsertChannel(env.DB, ch)
 		await upsertUsers(env.DB, newMsgs.map((m) => m.author).filter(Boolean) as NonNullable<typeof newMsgs[number]["author"]>[])
 		const inserted = await insertMessages(env.DB, newMsgs)
+		await Promise.all([
+			insertAttachments(env.DB, newMsgs),
+			insertReactions(env.DB, newMsgs),
+			insertEmbeds(env.DB, newMsgs),
+			upsertThreadsFromMessages(env.DB, newMsgs),
+		])
 		totalNew += inserted
 		touched.push(`#${ch.name}=+${inserted}`)
 	}
@@ -77,7 +95,7 @@ export async function scheduled(
 	})
 
 	console.log(
-		`[cron] +${totalNew} msgs across ${touched.length}/${textChannels.length} channels` +
+		`[cron] +${totalNew} msgs across ${touched.length}/${channelList.length} channels` +
 			` in ${elapsed}ms` +
 			(touched.length ? ` (${touched.join(", ")})` : ""),
 	)

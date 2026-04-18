@@ -12,6 +12,24 @@ import type {
 	DiscordUser,
 } from "./discord"
 
+function chunk<T>(arr: T[], size: number): T[][] {
+	if (arr.length <= size) return [arr]
+	const out: T[][] = []
+	for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+	return out
+}
+
+async function batched(db: D1Database, stmts: D1PreparedStatement[]): Promise<number> {
+	if (stmts.length === 0) return 0
+	let total = 0
+	// D1 batch caps at ~100 statements per call; chunk to be safe.
+	for (const piece of chunk(stmts, 50)) {
+		const results = await db.batch(piece)
+		total += results.reduce((acc, r) => acc + (r.meta?.changes ?? 0), 0)
+	}
+	return total
+}
+
 /** Fast batched upsert of users. Skips entries with no `id`. */
 export async function upsertUsers(
 	db: D1Database,
@@ -71,9 +89,100 @@ export async function insertMessages(
 			m.thread?.id ?? null,
 		),
 	)
-	const results = await db.batch(stmts)
-	// `meta.changes` reports the row count actually written (0 for ignored dupes).
-	return results.reduce((acc, r) => acc + (r.meta?.changes ?? 0), 0)
+	return batched(db, stmts)
+}
+
+/** INSERT OR IGNORE attachment metadata for new messages. Binary not downloaded. */
+export async function insertAttachments(
+	db: D1Database,
+	messages: DiscordMessage[],
+): Promise<number> {
+	const stmt = db.prepare(
+		`INSERT OR IGNORE INTO attachments
+       (id, message_id, filename, content_type, size, url, proxy_url, width, height)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	const stmts: D1PreparedStatement[] = []
+	for (const m of messages) {
+		for (const a of m.attachments ?? []) {
+			stmts.push(stmt.bind(
+				a.id, m.id, a.filename ?? "unknown", a.content_type ?? null,
+				a.size ?? null, a.url ?? null, a.proxy_url ?? null,
+				a.width ?? null, a.height ?? null,
+			))
+		}
+	}
+	return batched(db, stmts)
+}
+
+/** INSERT OR REPLACE reactions (counts can change). */
+export async function insertReactions(
+	db: D1Database,
+	messages: DiscordMessage[],
+): Promise<number> {
+	const stmt = db.prepare(
+		`INSERT OR REPLACE INTO reactions (message_id, emoji_name, emoji_id, count)
+     VALUES (?, ?, ?, ?)`,
+	)
+	const stmts: D1PreparedStatement[] = []
+	for (const m of messages) {
+		for (const r of m.reactions ?? []) {
+			stmts.push(stmt.bind(
+				m.id, r.emoji?.name ?? "", r.emoji?.id ?? null, r.count ?? 0,
+			))
+		}
+	}
+	return batched(db, stmts)
+}
+
+/** INSERT embeds. The embeds table uses an autoinc rowid; no dedup column. */
+export async function insertEmbeds(
+	db: D1Database,
+	messages: DiscordMessage[],
+): Promise<number> {
+	const stmt = db.prepare(
+		`INSERT INTO embeds
+       (message_id, type, title, description, url, thumbnail_url,
+        thumbnail_width, thumbnail_height, image_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	const stmts: D1PreparedStatement[] = []
+	for (const m of messages) {
+		for (const e of m.embeds ?? []) {
+			stmts.push(stmt.bind(
+				m.id, e.type ?? null, e.title ?? null, e.description ?? null,
+				e.url ?? null, e.thumbnail?.url ?? null,
+				e.thumbnail?.width ?? null, e.thumbnail?.height ?? null,
+				e.image?.url ?? null,
+			))
+		}
+	}
+	return batched(db, stmts)
+}
+
+/** Upsert thread metadata for any messages that created threads. */
+export async function upsertThreadsFromMessages(
+	db: D1Database,
+	messages: DiscordMessage[],
+): Promise<number> {
+	const stmt = db.prepare(
+		`INSERT OR REPLACE INTO threads
+       (id, parent_message_id, parent_channel_id, name,
+        message_count, member_count, archived, locked)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	const stmts: D1PreparedStatement[] = []
+	for (const m of messages) {
+		const t = m.thread
+		if (!t) continue
+		stmts.push(stmt.bind(
+			t.id, m.id, m.channel_id, t.name ?? null,
+			t.message_count ?? null, t.member_count ?? null,
+			t.thread_metadata?.archived ? 1 : 0,
+			t.thread_metadata?.locked ? 1 : 0,
+		))
+	}
+	return batched(db, stmts)
 }
 
 /** Read the latest snowflake per channel from D1; missing channels return null. */
