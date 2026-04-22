@@ -15,6 +15,7 @@ import aiohttp
 import asyncio
 import json
 import os
+import random
 import sys
 
 err = lambda *a, **kw: print(*a, file=sys.stderr, **kw)
@@ -23,19 +24,37 @@ BASE = "https://discord.com/api/v10"
 DEFAULT_GUILD = os.environ.get("DISCORD_GUILD", "")
 # Text-like channel types: text(0), announcement(5), public thread(11), private thread(12), announcement thread(10)
 TEXT_CHANNEL_TYPES = {0, 5, 10, 11, 12}
+RETRYABLE_STATUSES = {500, 502, 503, 504}
+MAX_RETRIES = 3
 
 
 async def api_get(session, url, params=None):
-    """GET with 429 retry handling."""
+    """GET with 429 backoff + 3x exp-backoff retry on 5xx and network errors."""
+    attempt = 0
     while True:
-        async with session.get(url, params=params) as r:
-            if r.status == 429:
-                body = await r.json()
-                retry_after = body.get("retry_after", 5)
-                err(f"    rate limited, waiting {retry_after:.1f}s...")
-                await asyncio.sleep(retry_after + 0.5)
-                continue
-            return r.status, await r.read(), r.content_type
+        try:
+            async with session.get(url, params=params) as r:
+                if r.status == 429:
+                    body = await r.json()
+                    retry_after = body.get("retry_after", 5)
+                    err(f"    rate limited, waiting {retry_after:.1f}s...")
+                    await asyncio.sleep(retry_after + 0.5)
+                    continue
+                body = await r.read()
+                if r.status in RETRYABLE_STATUSES and attempt < MAX_RETRIES:
+                    delay = 2 ** attempt + random.uniform(0, 0.5)
+                    err(f"    {r.status} on {url}, retry {attempt + 1}/{MAX_RETRIES} in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+                return r.status, body, r.content_type
+        except aiohttp.ClientError as e:
+            if attempt >= MAX_RETRIES:
+                raise
+            delay = 2 ** attempt + random.uniform(0, 0.5)
+            err(f"    network error on {url}: {e}, retry {attempt + 1}/{MAX_RETRIES} in {delay:.1f}s")
+            await asyncio.sleep(delay)
+            attempt += 1
 
 
 async def fetch_channels(session, guild_id):

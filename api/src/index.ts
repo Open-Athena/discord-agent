@@ -333,7 +333,7 @@ async function getMeta(env: Env): Promise<unknown> {
 		env.DB.prepare("SELECT COUNT(*) as n FROM channels WHERE type != 11"),
 		env.DB.prepare("SELECT COUNT(*) as n FROM users"),
 		env.DB.prepare(
-			"SELECT finished_at, source, run_url, messages_added, duration_ms, status FROM sync_runs ORDER BY finished_at DESC LIMIT 1",
+			"SELECT finished_at, source, run_url, messages_added, duration_ms, status, error FROM sync_runs ORDER BY finished_at DESC LIMIT 1",
 		),
 	])
 	const latestSync = rows[4].results[0] as {
@@ -343,6 +343,7 @@ async function getMeta(env: Env): Promise<unknown> {
 		messages_added: number
 		duration_ms: number
 		status: string
+		error: string | null
 	} | undefined
 	return {
 		latest_message_ts: (rows[0].results[0] as { ts: string | null }).ts,

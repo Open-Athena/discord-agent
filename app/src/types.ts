@@ -89,6 +89,7 @@ export interface SyncRun {
   messages_added: number
   duration_ms: number
   status: 'ok' | 'error'
+  error: string | null
 }
 
 export interface Meta {

@@ -57,10 +57,17 @@ export default function FreshnessFooter() {
   const syncAbs = sync ? absolute(sync.finished_at) : null
   const msgAgo = meta.latest_message_ts ? relativeAgo(meta.latest_message_ts) : null
   const msgAbs = meta.latest_message_ts ? absolute(meta.latest_message_ts) : null
+  const syncFailed = sync?.status === 'error'
 
   // Footer text: prefer "synced" (DB freshness) when available; fall back
-  // to the latest-message timestamp.
-  const primaryLabel = syncAgo ? `Synced ${syncAgo}` : msgAgo ? `Latest msg ${msgAgo}` : 'Loading…'
+  // to the latest-message timestamp. Surface failures explicitly.
+  const primaryLabel = syncFailed
+    ? `Sync failed ${syncAgo}`
+    : syncAgo
+      ? `Synced ${syncAgo}`
+      : msgAgo
+        ? `Latest msg ${msgAgo}`
+        : 'Loading…'
 
   return (
     <Tooltip interactive content={
@@ -72,7 +79,14 @@ export default function FreshnessFooter() {
               {syncAbs} ({syncAgo})
               {sync.run_url ? <> · <a href={sync.run_url} target="_blank" rel="noopener noreferrer">{sync.source}</a></> : <> · {sync.source}</>}
               {sync.messages_added > 0 ? ` · +${sync.messages_added}` : ''}
+              {syncFailed ? ' · failed' : ''}
             </span>
+          </div>
+        )}
+        {syncFailed && sync?.error && (
+          <div className="freshness-row">
+            <span className="freshness-label">Error</span>
+            <span className="freshness-error">{sync.error}</span>
           </div>
         )}
         {msgAbs && (
@@ -115,7 +129,7 @@ export default function FreshnessFooter() {
         )}
       </div>
     }>
-      <div className="freshness-footer">
+      <div className={`freshness-footer${syncFailed ? ' freshness-footer--error' : ''}`}>
         <span>{primaryLabel}</span>
         <span className="freshness-dot">·</span>
         <span>{meta.total_messages.toLocaleString()} msgs</span>

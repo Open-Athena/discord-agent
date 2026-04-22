@@ -205,14 +205,15 @@ export interface SyncRun {
 	messages_added: number
 	duration_ms: number
 	status: "ok" | "error"
+	error?: string | null
 }
 
 /** Append a row to the sync_runs log. */
 export async function recordSyncRun(db: D1Database, row: SyncRun): Promise<void> {
 	await db
 		.prepare(
-			`INSERT INTO sync_runs (id, finished_at, source, run_url, messages_added, duration_ms, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO sync_runs (id, finished_at, source, run_url, messages_added, duration_ms, status, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -222,6 +223,7 @@ export async function recordSyncRun(db: D1Database, row: SyncRun): Promise<void>
 			row.messages_added,
 			row.duration_ms,
 			row.status,
+			row.error ?? null,
 		)
 		.run()
 }

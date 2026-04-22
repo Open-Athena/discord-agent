@@ -73,6 +73,37 @@ export async function scheduled(
 
 	console.log(`[cron] tick at ${new Date(event.scheduledTime).toISOString()}`)
 
+	try {
+		await runTick(event, env, guildId, token, t0)
+	} catch (e) {
+		const finishedAt = new Date().toISOString()
+		const errMsg = e instanceof Error ? e.message : String(e)
+		const truncated = errMsg.length > 500 ? errMsg.slice(0, 500) + "…" : errMsg
+		console.error(`[cron] tick failed after ${Date.now() - t0}ms: ${errMsg}`)
+		try {
+			await recordSyncRun(env.DB, {
+				id: `cfw:${finishedAt}`,
+				finished_at: finishedAt,
+				source: "cfw",
+				messages_added: 0,
+				duration_ms: Date.now() - t0,
+				status: "error",
+				error: truncated,
+			})
+		} catch (recordErr) {
+			console.error(`[cron] failed to record error row: ${String(recordErr)}`)
+		}
+		throw e
+	}
+}
+
+async function runTick(
+	_event: ScheduledEvent,
+	env: Env,
+	guildId: string,
+	token: string,
+	t0: number,
+): Promise<void> {
 	const cursors = await latestMessageIdsByChannel(env.DB)
 	const [parentChannels, activeThreads] = await Promise.all([
 		fetchGuildChannels(guildId, token),

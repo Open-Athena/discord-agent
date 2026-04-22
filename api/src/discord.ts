@@ -12,6 +12,9 @@ const UA = "discord-archive-cfw (+https://github.com/Open-Athena/discord-agent, 
 // public thread(11), private thread(12).
 export const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12])
 
+const RETRYABLE_STATUSES = new Set([500, 502, 503, 504])
+const MAX_RETRIES = 3
+
 export interface DiscordUser {
 	id: string
 	username: string
@@ -79,32 +82,53 @@ export interface DiscordChannel {
 	last_message_id?: string | null
 }
 
-/** Perform a Discord API GET, retrying on 429. Returns parsed JSON or null on 403. */
+/**
+ * Perform a Discord API GET with 429 backoff + 3x exp-backoff retry on 5xx
+ * and network errors. Returns parsed JSON or null on 403. 429 retries use
+ * `retry_after` and are bounded separately (cap 5).
+ */
 async function apiGet<T>(path: string, token: string): Promise<T | null> {
-	// Bounded retry loop: each 429 waits `retry_after` and tries again. Cap at 5
-	// retries to avoid pathological spins.
-	for (let attempt = 0; attempt < 5; attempt++) {
-		const res = await fetch(`${BASE}${path}`, {
-			headers: {
-				Authorization: `Bot ${token}`,
-				"User-Agent": UA,
-			},
-		})
+	let attempt = 0
+	let retries429 = 0
+	while (true) {
+		let res: Response
+		try {
+			res = await fetch(`${BASE}${path}`, {
+				headers: { Authorization: `Bot ${token}`, "User-Agent": UA },
+			})
+		} catch (e) {
+			if (attempt >= MAX_RETRIES) throw e
+			await backoff(attempt, `network error on ${path}: ${String(e)}`)
+			attempt++
+			continue
+		}
 		if (res.status === 429) {
+			if (retries429 >= 5) throw new Error(`Discord: exhausted 429 retries on ${path}`)
 			const body = (await res.json()) as { retry_after?: number }
 			const waitMs = Math.ceil((body.retry_after ?? 5) * 1000) + 500
 			console.warn(`[discord] 429 on ${path}, waiting ${waitMs}ms`)
 			await new Promise((r) => setTimeout(r, waitMs))
+			retries429++
 			continue
 		}
 		if (res.status === 403) return null
+		if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
+			await backoff(attempt, `${res.status} on ${path}`)
+			attempt++
+			continue
+		}
 		if (!res.ok) {
 			const text = await res.text()
 			throw new Error(`Discord ${res.status} on ${path}: ${text.slice(0, 200)}`)
 		}
 		return (await res.json()) as T
 	}
-	throw new Error(`Discord: exhausted 429 retries on ${path}`)
+}
+
+async function backoff(attempt: number, msg: string): Promise<void> {
+	const waitMs = Math.round((2 ** attempt + Math.random() * 0.5) * 1000)
+	console.warn(`[discord] ${msg}, retry ${attempt + 1}/${MAX_RETRIES} in ${waitMs}ms`)
+	await new Promise((r) => setTimeout(r, waitMs))
 }
 
 export async function fetchGuildChannels(

@@ -963,6 +963,15 @@
   border-radius: 3px;
   font-size: 11px;
 }
+.freshness-footer--error {
+  color: var(--danger, #e06c75);
+}
+.freshness-error {
+  color: var(--danger, #e06c75);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-word;
+}
 
 /* Discord link tooltip (same as interactive variant but a bit tighter) */
 .discord-link-tooltip {

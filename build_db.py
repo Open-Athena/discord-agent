@@ -105,7 +105,8 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     run_url TEXT,
     messages_added INTEGER DEFAULT 0,
     duration_ms INTEGER,
-    status TEXT NOT NULL DEFAULT 'ok'   -- 'ok' | 'error'
+    status TEXT NOT NULL DEFAULT 'ok',  -- 'ok' | 'error'
+    error TEXT                          -- truncated error message when status='error'
 );
 CREATE INDEX IF NOT EXISTS idx_sync_runs_finished_at ON sync_runs(finished_at);
 
