@@ -11,6 +11,20 @@ const UA = "discord-archive-cfw (+https://github.com/Open-Athena/discord-agent, 
 // Text-like channel types: text(0), announcement(5), announcement thread(10),
 // public thread(11), private thread(12).
 export const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12])
+export const PRIVATE_THREAD = 12
+const VIEW_CHANNEL = 1n << 10n
+
+/**
+ * True iff @everyone (role id == guild id) is not denied VIEW_CHANNEL —
+ * i.e. the channel is not "Private" in Discord's UI. Mirrors `is_public`
+ * in the top-level `archive.py`.
+ */
+export function isPublic(ch: DiscordChannel, guildId: string): boolean {
+	for (const ow of ch.permission_overwrites ?? []) {
+		if (ow.id === guildId && (BigInt(ow.deny ?? "0") & VIEW_CHANNEL) !== 0n) return false
+	}
+	return true
+}
 
 const RETRYABLE_STATUSES = new Set([500, 502, 503, 504])
 const MAX_RETRIES = 3
@@ -77,6 +91,10 @@ export interface DiscordChannel {
 	name: string
 	type: number
 	position?: number
+	// Present on threads: the parent channel's id.
+	parent_id?: string | null
+	// Present on guild channels: per-role/member permission overrides.
+	permission_overwrites?: { id: string; type: number; allow?: string; deny?: string }[]
 	// Present on text-like channels / threads. Lets us skip fetching when
 	// Discord's own "newest message id" is already <= our D1 cursor.
 	last_message_id?: string | null

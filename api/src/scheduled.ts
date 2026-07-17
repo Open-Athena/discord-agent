@@ -10,9 +10,12 @@ import type { DiscordChannel } from "./discord"
 import {
 	fetchActiveThreads,
 	fetchGuildChannels,
+	isPublic,
 	paginateNewMessages,
+	PRIVATE_THREAD,
 	TEXT_CHANNEL_TYPES,
 } from "./discord"
+import { EXCLUDED_CHANNEL_IDS } from "./excluded_channels"
 import {
 	insertAttachments,
 	insertEmbeds,
@@ -109,11 +112,33 @@ async function runTick(
 		fetchGuildChannels(guildId, token),
 		fetchActiveThreads(guildId, token),
 	])
+	// Public channels only: private channels (and the policy blocklist) are
+	// never ingested — on-demand CLI reads are the sanctioned path for those.
+	// A thread is ingested only if it's non-private and its parent is public.
+	const publicParentIds = new Set(
+		parentChannels
+			.filter((c) => isPublic(c, guildId) && !EXCLUDED_CHANNEL_IDS.has(c.id))
+			.map((c) => c.id),
+	)
+	const publicParents = parentChannels.filter(
+		(c) => TEXT_CHANNEL_TYPES.has(c.type) && publicParentIds.has(c.id),
+	)
+	const publicThreads = activeThreads.filter(
+		(t) =>
+			t.type !== PRIVATE_THREAD &&
+			!EXCLUDED_CHANNEL_IDS.has(t.id) &&
+			t.parent_id != null &&
+			publicParentIds.has(t.parent_id),
+	)
+	const skippedPrivate = parentChannels.filter((c) => TEXT_CHANNEL_TYPES.has(c.type)).length
+		- publicParents.length
+		+ (activeThreads.length - publicThreads.length)
+	if (skippedPrivate > 0) console.log(`[cron] ${skippedPrivate} private/excluded channels+threads skipped`)
 	// Iterate parents (text-like) + active threads. Already-archived threads
 	// in D1 won't be re-fetched unless they appear here, but they're frozen
 	// by definition — D1 is correct.
 	const seen = new Set<string>()
-	const channelList = [...parentChannels.filter((c) => TEXT_CHANNEL_TYPES.has(c.type)), ...activeThreads]
+	const channelList = [...publicParents, ...publicThreads]
 		.filter((c) => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
 		.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
 
