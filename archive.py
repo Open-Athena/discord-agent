@@ -18,6 +18,8 @@ import os
 import random
 import sys
 
+from excluded_channels import EXCLUDED_CHANNEL_IDS
+
 err = lambda *a, **kw: print(*a, file=sys.stderr, **kw)
 
 BASE = "https://discord.com/api/v10"
@@ -26,6 +28,16 @@ DEFAULT_GUILD = os.environ.get("DISCORD_GUILD", "")
 TEXT_CHANNEL_TYPES = {0, 5, 10, 11, 12}
 RETRYABLE_STATUSES = {500, 502, 503, 504}
 MAX_RETRIES = 3
+PRIVATE_THREAD = 12
+VIEW_CHANNEL = 1 << 10
+
+
+def is_public(ch, guild_id):
+    """True iff @everyone (role id == guild id) is not denied VIEW_CHANNEL — i.e. the channel is not "Private" in Discord's UI."""
+    for ow in ch.get("permission_overwrites", []):
+        if ow.get("id") == guild_id and int(ow.get("deny", 0)) & VIEW_CHANNEL:
+            return False
+    return True
 
 
 async def api_get(session, url, params=None):
@@ -209,7 +221,7 @@ async def archive_channel(session, channel_id, channel_name, out_dir, attachment
 
 
 def collect_thread_ids(archive_dir):
-    """Scan archived messages for thread references, return {thread_id: thread_name}."""
+    """Scan archived messages for thread references, return {thread_id: (thread_name, thread_type)}."""
     threads = {}
     for f in archive_dir.glob("*.json"):
         if f.name == "index.json":
@@ -218,7 +230,8 @@ def collect_thread_ids(archive_dir):
         for msg in messages:
             thread = msg.get("thread")
             if thread:
-                threads[thread["id"]] = thread.get("name", f"thread-{thread['id']}")
+                name = thread.get("name", f"thread-{thread['id']}")
+                threads[thread["id"]] = (name, thread.get("type", 11))
     return threads
 
 
@@ -300,7 +313,9 @@ async def backfill_attachments(session, out_dir, attachments_dir):
     err(f"Backfill complete: {downloaded} downloaded, {failed} failed, {skipped} already existed, {total} total")
 
 
-async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False):
+async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False, excluded=None, include_private=None):
+    excluded = EXCLUDED_CHANNEL_IDS | (excluded or set())
+    include_private = (include_private or set()) - EXCLUDED_CHANNEL_IDS
     token = os.environ["DISCORD_TOKEN"]
     headers = {
         "Authorization": f"Bot {token}",
@@ -334,6 +349,12 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
         total_new = 0
         total_att = 0
         for ch in text_channels:
+            if ch["id"] in excluded:
+                err(f"  #{ch['name']}: excluded by policy, skipping")
+                continue
+            if not is_public(ch, guild_id) and ch["id"] not in include_private:
+                err(f"  #{ch['name']}: private, skipping (pass -p {ch['id']} to include)")
+                continue
             new, att = await archive_channel(
                 session, ch["id"], ch["name"], out_dir, attachments_dir,
             )
@@ -349,7 +370,15 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
 
             thread_new = 0
             thread_att = 0
-            for thread_id, thread_name in sorted(thread_ids.items()):
+            for thread_id, (thread_name, thread_type) in sorted(thread_ids.items()):
+                # Threads are discovered from archived parent-channel messages, so
+                # skipped channels' threads never appear; guard anyway.
+                if thread_id in excluded:
+                    err(f"  #{thread_name}: excluded by policy, skipping")
+                    continue
+                if thread_type == PRIVATE_THREAD and thread_id not in include_private:
+                    err(f"  #{thread_name}: private thread, skipping (pass -p {thread_id} to include)")
+                    continue
                 new, att = await archive_channel(
                     session, thread_id, thread_name, threads_dir, attachments_dir,
                 )
@@ -376,10 +405,20 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
 @option('-b', '--backfill-attachments', is_flag=True, help='Download all missing attachments from existing archive')
 @option('-g', '--guild', default=DEFAULT_GUILD, required=not DEFAULT_GUILD, help='Guild (server) ID, or set DISCORD_GUILD env var')
 @option('-o', '--out-dir', default='archive', help='Output directory for JSON files')
+@option('-p', '--include-private', multiple=True, help='Private channel/thread IDs to archive anyway (policy-excluded channels are still refused)')
 @option('-T', '--no-threads', is_flag=True, help='Skip fetching thread messages')
-def main(guild, no_attachments, backfill_attachments, no_threads, out_dir):
-    """Archive all messages from a Discord guild."""
-    asyncio.run(run(guild, out_dir, not no_attachments, not no_threads, backfill_attachments))
+@option('-x', '--exclude', multiple=True, help='Additional channel IDs to exclude (also DISCORD_EXCLUDE_CHANNELS, comma-separated); the baked-in policy exclusions always apply')
+def main(guild, no_attachments, backfill_attachments, no_threads, out_dir, include_private, exclude):
+    """Archive all messages from a Discord guild.
+
+    Only public channels (visible to @everyone) are archived by default;
+    private channels and private threads are skipped unless passed via
+    `-p`/`--include-private`.
+    """
+    excluded = set(exclude)
+    env_exclude = os.environ.get("DISCORD_EXCLUDE_CHANNELS", "")
+    excluded |= {c.strip() for c in env_exclude.split(",") if c.strip()}
+    asyncio.run(run(guild, out_dir, not no_attachments, not no_threads, backfill_attachments, excluded, set(include_private)))
 
 
 if __name__ == "__main__":

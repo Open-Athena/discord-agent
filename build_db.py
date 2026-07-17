@@ -14,6 +14,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from excluded_channels import EXCLUDED_CHANNEL_IDS
+
 err = lambda *a, **kw: print(*a, file=sys.stderr, **kw)
 
 SCHEMA = """
@@ -283,6 +285,11 @@ def build_db(archive_dir, db_path):
 
         channel_name = m.group(1)
         channel_id = m.group(2)
+        if channel_id in EXCLUDED_CHANNEL_IDS:
+            raise SystemExit(
+                f"POLICY VIOLATION: excluded channel #{channel_name} ({channel_id}) present in "
+                f"{fp} — it must never be archived (see excluded_channels.py); refusing to build"
+            )
         count = load_channel_file(cur, fp, channel_id, channel_name, attachments_dir)
         err(f"  #{channel_name}: {count} messages")
         total_msgs += count

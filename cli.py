@@ -178,6 +178,70 @@ def serve(db_path, port):
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
 
+# ── read ─────────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.argument("channel")
+@click.option('-a', '--after', default=None, help='Message-ID cursor: only messages after this ID')
+@click.option('-b', '--before', default=None, help='Message-ID cursor: only messages before this ID')
+@click.option('-g', '--guild', default=None, help='Guild ID for channel-name resolution (or DISCORD_GUILD / config)')
+@click.option('-j', '--json', 'as_json', is_flag=True, help='Emit raw message JSON (one array)')
+@click.option('-n', '--limit', default=50, help='Max messages to fetch (paginates past 100)')
+def read(channel, after, before, guild, as_json, limit):
+    """Read a channel's recent messages live from the API (stdout only; nothing persisted).
+
+    CHANNEL is a channel/thread ID, or a name to resolve via the guild
+    channel list. This is the sanctioned path for private channels that are
+    excluded from the archive (e.g. #internal-discuss).
+    """
+    from discord_api import discord_list_messages, discord_request
+
+    if not channel.isdigit():
+        guild_id = _resolve(guild, "DISCORD_GUILD", "guild")
+        if not guild_id:
+            raise click.ClickException("Channel-name resolution needs a guild ID (-g / DISCORD_GUILD / config)")
+        channels = discord_request("GET", f"/guilds/{guild_id}/channels") or []
+        matches = [ch for ch in channels if ch.get("name") == channel.lstrip("#")]
+        if not matches:
+            raise click.ClickException(f"No channel named {channel!r} in guild {guild_id}")
+        channel = matches[0]["id"]
+
+    messages = []
+    cursor_before = before
+    while len(messages) < limit:
+        page = discord_list_messages(
+            channel,
+            limit=min(limit - len(messages), 100),
+            before=cursor_before,
+            after=after,
+        )
+        if not page:
+            break
+        messages.extend(page)
+        if after:
+            # `after` pages don't chain with a `before` cursor; take the single page
+            break
+        cursor_before = page[-1]["id"]
+
+    if as_json:
+        print(json.dumps(messages, indent=2))
+        return
+    for msg in reversed(messages):  # oldest first
+        author = msg.get("author") or {}
+        name = author.get("global_name") or author.get("username") or "?"
+        ts = (msg.get("timestamp") or "")[:16]
+        content = msg.get("content") or ""
+        extras = []
+        if msg.get("attachments"):
+            extras.append(f"[{len(msg['attachments'])} attachment(s)]")
+        if msg.get("embeds"):
+            extras.append(f"[{len(msg['embeds'])} embed(s)]")
+        if msg.get("thread"):
+            extras.append(f"[thread: {msg['thread'].get('name')} {msg['thread']['id']}]")
+        line = " ".join(x for x in [content, *extras] if x)
+        print(f"{ts} {name}: {line}  <{msg['id']}>")
+
+
 # ── post ─────────────────────────────────────────────────────────────────────
 
 @cli.command()

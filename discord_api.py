@@ -130,12 +130,19 @@ def discord_create_thread(
 def discord_list_messages(
     channel_id: str,
     limit: int = 50,
+    before: str | None = None,
+    after: str | None = None,
     token: str | None = None,
 ) -> list[dict]:
-    """List recent messages in a channel."""
+    """List recent messages in a channel (newest-first; `before`/`after` are message-ID cursors)."""
+    params = f"limit={min(limit, 100)}"
+    if before:
+        params += f"&before={before}"
+    if after:
+        params += f"&after={after}"
     data = discord_request(
         "GET",
-        f"/channels/{channel_id}/messages?limit={limit}",
+        f"/channels/{channel_id}/messages?{params}",
         token=token,
     )
     return data if isinstance(data, list) else []
