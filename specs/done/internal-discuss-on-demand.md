@@ -37,13 +37,21 @@ These are the AA surface for Claude sessions; keep output plain and pipeable.
 
 Fail loudly if any `EXCLUDED_CHANNEL_IDS` member appears in the input `archive/` JSON (protects against a stale/patched fetch layer silently propagating private content to DB → D1 → viewer). Imports the same `excluded_channels.py` as `archive.py` — single source of truth, dependency-free so both uv-script headers stay unchanged.
 
+### 4. CFW scheduled ingest: same filter (added during implementation)
+
+The Worker cron (`api/src/scheduled.ts`, every 10 min in `marin-discord`) is a second ingest path that would otherwise pull any bot-visible channel into D1. It now applies the same policy: `isPublic` (`api/src/discord.ts`), private threads skipped, threads require a public parent, and `api/src/excluded_channels.ts` mirrors the Python blocklist (keep in sync).
+
+Deploy note: the `marin-discord` crons pin `discord-agent@marin` (not `v1`) — the `marin` branch (branding on top of `main`) is the ref that must carry these changes, and the worker needs a `deploy-worker` dispatch to pick them up.
+
 ## Non-goals
 
 - marinmirror / `mum` corpus coverage (Russell's ingest bot; separate decision).
 - Any change to viewer/D1 filtering — exclusion at the fetch layer plus the build assert is the design; private content should never reach those layers.
 
-## Verification
+## Verification (done 2026-07-17)
 
-- `is_public` / filter logic exercised against the real guild channel list (private channels — internal-discuss among them — skipped; the 60-odd public channels kept).
-- With a scratch out-dir and bot access granted: `archive.py -o tmp/scratch-archive` produces no files for private channels while `cli.py read internal-discuss -n 5` returns messages.
-- `build_db.py` against a fixture containing an excluded-channel file → hard failure.
+- `is_public` against the real guild channel list: 75 text channels → 71 public, 4 private (`internal-discuss`, `marin-bot-dbg`, `moderator-only`, `openthoughts-next-core`), all detected.
+- `build_db.py` against a fixture containing an excluded-channel file → hard failure ("POLICY VIOLATION … refusing to build").
+- `cli.py read general -n 3` live-read smoke test passed.
+- Manual `update-archive` dispatch in `marin-discord` (run 29609597853) green on the new code; logs show `#internal-discuss: excluded by policy, skipping` + the 3 other private channels skipped as private.
+- `deploy-worker` dispatch deployed the filtered CFW cron; `api` typecheck clean.
