@@ -4,7 +4,7 @@
 # dependencies = [
 #     "anthropic",
 #     "click",
-#     "thrds>=0.2.0",
+#     "thrds @ git+https://github.com/runsascoded/thrds@d45d3401ad4c014a55550c91b832d8a83061524a",
 # ]
 # ///
 """Generate weekly Discord activity summaries in XS/S/M tiers.
