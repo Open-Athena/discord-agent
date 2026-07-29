@@ -85,7 +85,9 @@ async def fetch_messages(session, channel_id, before=None, after=None):
     if after:
         params["after"] = after
     status, body, _ = await api_get(session, f"{BASE}/channels/{channel_id}/messages", params)
-    if status == 403:
+    # 403: no access; 404: channel/thread deleted (e.g. still referenced by an
+    # archived starter message after the thread itself was removed)
+    if status in (403, 404):
         return None
     if status != 200:
         raise RuntimeError(f"Failed to fetch messages from {channel_id}: {status} {body[:200]}")
@@ -140,7 +142,7 @@ async def paginate_all(session, channel_id, channel_name, existing=None):
         while True:
             messages = await fetch_messages(session, channel_id, after=after_id)
             if messages is None:
-                err(f"  #{channel_name}: no access, skipping")
+                err(f"  #{channel_name}: inaccessible or deleted, skipping")
                 return [], False
             if not messages:
                 break
@@ -157,7 +159,7 @@ async def paginate_all(session, channel_id, channel_name, existing=None):
     while True:
         messages = await fetch_messages(session, channel_id, before=before_id)
         if messages is None:
-            err(f"  #{channel_name}: no access, skipping")
+            err(f"  #{channel_name}: inaccessible or deleted, skipping")
             return [], False
         if not messages:
             break
