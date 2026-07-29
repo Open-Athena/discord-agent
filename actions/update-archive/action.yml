@@ -131,5 +131,8 @@ runs:
           echo "No archive changes to commit"
         else
           git commit -m "Update archive $(date -u +%Y-%m-%d)"
+          # Another run (or the weekly summary) may have pushed while this one
+          # ran — absorb it rather than failing non-fast-forward.
+          git pull --rebase
           git push
         fi

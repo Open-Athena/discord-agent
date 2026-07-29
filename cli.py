@@ -352,5 +352,38 @@ def delete(channel_id, message_ids, bot_only, limit, after):
         raise click.ClickException("Provide message IDs or --bot-only")
 
 
+# ── missing-week ─────────────────────────────────────────────────────────────
+
+@cli.command("missing-week")
+@click.option('-a', '--all', 'show_all', is_flag=True, help='Print all missing weeks, oldest first (default: just the oldest)')
+@click.option('-l', '--lookback', default=8, help='Completed weeks to scan (default: 8)')
+@click.option('-s', '--summaries-dir', default='summaries', help='Summaries directory')
+def missing_week(show_all, lookback, summaries_dir):
+    """Print the oldest recent week lacking a generated + posted summary.
+
+    A week counts as done when <summaries-dir>/<week>/xs.md exists and its
+    meta.json records a posted Discord thread (current or legacy layout).
+    Prints nothing (exit 0) when no week in the lookback window is missing.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    today = datetime.now(timezone.utc)
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    last_monday = last_sunday - timedelta(days=6)
+    missing = []
+    for i in range(lookback - 1, -1, -1):
+        wk = (last_monday - timedelta(weeks=i)).strftime("%Y-%m-%d")
+        d = Path(summaries_dir) / wk
+        posted = False
+        meta_path = d / "meta.json"
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            posted = bool(meta.get("discord", {}).get("thread_id") or meta.get("thread_id"))
+        if not ((d / "xs.md").exists() and posted):
+            missing.append(wk)
+    for wk in missing if show_all else missing[:1]:
+        print(wk)
+
+
 if __name__ == "__main__":
     cli()
