@@ -237,6 +237,37 @@ def collect_thread_ids(archive_dir):
     return threads
 
 
+async def fetch_active_threads(session, guild_id):
+    """All active threads in the guild."""
+    status, body, _ = await api_get(session, f"{BASE}/guilds/{guild_id}/threads/active")
+    if status != 200:
+        raise RuntimeError(f"Failed to fetch active threads: {status} {body[:200]}")
+    return json.loads(body)["threads"]
+
+
+async def fetch_archived_threads(session, channel_id, channel_name):
+    """All public archived threads of a channel, via paginated listing."""
+    threads = []
+    before = None
+    while True:
+        params = {"limit": 100}
+        if before:
+            params["before"] = before
+        status, body, _ = await api_get(
+            session, f"{BASE}/channels/{channel_id}/threads/archived/public", params,
+        )
+        if status in (403, 404):
+            return threads
+        if status != 200:
+            raise RuntimeError(f"Failed to fetch archived threads for #{channel_name}: {status} {body[:200]}")
+        data = json.loads(body)
+        batch = data.get("threads", [])
+        threads.extend(batch)
+        if not data.get("has_more") or not batch:
+            return threads
+        before = batch[-1]["thread_metadata"]["archive_timestamp"]
+
+
 async def backfill_attachments(session, out_dir, attachments_dir):
     """Download missing attachments by re-fetching messages from the API for fresh CDN URLs."""
     attachments_dir.mkdir(exist_ok=True)
@@ -350,6 +381,7 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
 
         total_new = 0
         total_att = 0
+        archived_parents = []
         for ch in text_channels:
             if ch["id"] in excluded:
                 err(f"  #{ch['name']}: excluded by policy, skipping")
@@ -357,6 +389,7 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
             if not is_public(ch, guild_id) and ch["id"] not in include_private:
                 err(f"  #{ch['name']}: private, skipping (pass -p {ch['id']} to include)")
                 continue
+            archived_parents.append((ch["id"], ch["name"]))
             new, att = await archive_channel(
                 session, ch["id"], ch["name"], out_dir, attachments_dir,
             )
@@ -367,8 +400,30 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
 
         # Phase 2: archive threads
         if fetch_threads:
+            # Starter-message stubs alone miss threads created on messages
+            # that were archived before the thread existed (incremental runs
+            # never re-fetch old messages), so also enumerate via the API:
+            # all active threads, plus each channel's public archived threads.
             thread_ids = collect_thread_ids(out_dir)
-            err(f"\nFound {len(thread_ids)} threads to archive")
+            n_stub = len(thread_ids)
+            api_threads = list(await fetch_active_threads(session, guild_id))
+            for ch_id, ch_name in archived_parents:
+                api_threads.extend(await fetch_archived_threads(session, ch_id, ch_name))
+            parent_ids = {ch_id for ch_id, _ in archived_parents}
+            for th in api_threads:
+                if th.get("parent_id") not in parent_ids:
+                    continue
+                thread_ids[th["id"]] = (th.get("name", f"thread-{th['id']}"), th.get("type", 11))
+            # A rename (or stub-vs-API name skew) would fork a second
+            # `{name}_{id}.json` for the same thread; keep the on-disk name.
+            existing_names = {}
+            for f in threads_dir.glob("*_*.json"):
+                name, _, tid = f.name[:-len(".json")].rpartition("_")
+                existing_names[tid] = name
+            for tid, (name, ttype) in thread_ids.items():
+                if tid in existing_names and existing_names[tid] != safe_filename(name):
+                    thread_ids[tid] = (existing_names[tid], ttype)
+            err(f"\nFound {len(thread_ids)} threads to archive ({n_stub} via starter stubs, {len(thread_ids) - n_stub} API-only)")
 
             thread_new = 0
             thread_att = 0
