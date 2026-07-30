@@ -25,6 +25,19 @@ done
 
 SQL_FILE="../archive.sql"
 
+# Drop existing tables so the dump's CREATE TABLEs don't collide (this is the
+# "drop" half of drop + recreate). messages_fts goes first — dropping the FTS5
+# table also removes its shadow tables, which can't be dropped directly.
+echo "Dropping existing tables..."
+EXISTING=$(npx wrangler d1 execute $D1_NAME $REMOTE --json \
+    --command="SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf%' ESCAPE '\\' AND name NOT LIKE 'messages\\_fts%' ESCAPE '\\'" \
+    | python3 -c "import json, sys; print('\n'.join(r['name'] for r in json.load(sys.stdin)[0]['results']))")
+DROP_SQL="DROP TABLE IF EXISTS messages_fts;"
+for t in $EXISTING; do
+    DROP_SQL="$DROP_SQL DROP TABLE IF EXISTS \"$t\";"
+done
+npx wrangler d1 execute $D1_NAME $REMOTE --command="$DROP_SQL" --yes
+
 echo "Dumping $DB_PATH to $SQL_FILE..."
 # Dump and convert unistr() calls to plain strings (D1 doesn't support unistr)
 sqlite3 "$DB_PATH" .dump | python3 -c "
