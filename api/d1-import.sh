@@ -32,7 +32,9 @@ echo "Dropping existing tables..."
 EXISTING=$(npx wrangler d1 execute $D1_NAME $REMOTE --json \
     --command="SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf%' ESCAPE '\\' AND name NOT LIKE 'messages\\_fts%' ESCAPE '\\'" \
     | python3 -c "import json, sys; print('\n'.join(r['name'] for r in json.load(sys.stdin)[0]['results']))")
-DROP_SQL="DROP TABLE IF EXISTS messages_fts;"
+# defer_foreign_keys lets parent and child tables drop in one batch regardless
+# of order (D1 enforces FKs and supports no other way to disable them).
+DROP_SQL="PRAGMA defer_foreign_keys = true; DROP TABLE IF EXISTS messages_fts;"
 for t in $EXISTING; do
     DROP_SQL="$DROP_SQL DROP TABLE IF EXISTS \"$t\";"
 done
