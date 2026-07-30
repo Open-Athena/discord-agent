@@ -326,6 +326,38 @@ async function getUsers(db: D1Database): Promise<unknown[]> {
 	return results
 }
 
+const SQL_ROW_CAP = 1000
+
+async function runSql(db: D1Database, sql: string): Promise<unknown> {
+	// Read-only guard: single SELECT/WITH statement. The data is public;
+	// this prevents accidents, not attackers.
+	const stripped = sql
+		.replace(/--[^\n]*/g, "")
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.trim()
+		.replace(/;\s*$/, "")
+	if (!stripped) throw new Error("empty query")
+	if (stripped.includes(";")) throw new Error("only a single statement is allowed")
+	if (!/^(select|with)\b/i.test(stripped)) throw new Error("only SELECT/WITH queries are allowed")
+	if (stripped.length > 10_000) throw new Error("query too long")
+
+	const t0 = Date.now()
+	// Wrap to cap result size; one extra row detects truncation.
+	const { results } = await db
+		.prepare(`SELECT * FROM (${stripped}) LIMIT ${SQL_ROW_CAP + 1}`)
+		.all()
+	const truncated = results.length > SQL_ROW_CAP
+	const rows = truncated ? results.slice(0, SQL_ROW_CAP) : results
+	const columns = rows.length ? Object.keys(rows[0] as object) : []
+	return {
+		columns,
+		rows: rows.map((r) => columns.map((c) => (r as Record<string, unknown>)[c])),
+		row_count: rows.length,
+		truncated,
+		elapsed_ms: Date.now() - t0,
+	}
+}
+
 async function getMeta(env: Env): Promise<unknown> {
 	const rows = await env.DB.batch([
 		env.DB.prepare("SELECT MAX(timestamp) as ts FROM messages"),
@@ -405,6 +437,18 @@ export default {
 			// GET /api/meta
 			if (path === "/api/meta") {
 				return json(await getMeta(env), env)
+			}
+
+			// POST /api/sql {sql} — ad-hoc read-only queries (SQL console)
+			if (path === "/api/sql" && request.method === "POST") {
+				const body = (await request.json()) as { sql?: string }
+				if (!body.sql) return json({ error: "missing sql" }, env, 400)
+				try {
+					return json(await runSql(env.DB, body.sql), env)
+				} catch (e) {
+					const message = e instanceof Error ? e.message : String(e)
+					return json({ error: message }, env, 400)
+				}
 			}
 
 			return json({ error: "not found" }, env, 404)

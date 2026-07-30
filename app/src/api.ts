@@ -1,4 +1,4 @@
-import type { Channel, Message, Meta, SearchResult, User } from './types'
+import type { Channel, Message, Meta, SearchResult, SqlResult, User } from './types'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE || '') + '/api'
 const BASE = API_BASE
@@ -45,4 +45,15 @@ export function searchMessages(query: string, limit = 50): Promise<SearchResult[
 
 export function fetchMeta(): Promise<Meta> {
   return fetchJson(`${BASE}/meta`)
+}
+
+export async function runSql(sql: string): Promise<SqlResult> {
+  const res = await fetch(`${BASE}/sql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(body.error || `API error: ${res.status}`)
+  return body
 }

@@ -121,14 +121,8 @@ export default function FreshnessFooter() {
                   })</span>
                 )}
               </a>
-              <a
-                href={`https://lite.datasette.io/?url=${encodeURIComponent(meta.archive_db_url)}`}
-                target="_blank" rel="noopener noreferrer"
-              >
-                🔍 Query in Datasette-Lite
-              </a>
               <div className="freshness-hint">
-                SQLite file, updated hourly. Query with <code>sqlite3</code>, a notebook, or Datasette-Lite.
+                SQLite file, updated hourly. Query with <code>sqlite3</code>, a notebook, or the SQL console above.
               </div>
             </div>
           </>

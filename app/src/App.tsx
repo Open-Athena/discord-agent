@@ -7,6 +7,7 @@ import { LookupContext } from './context'
 import ChannelList from './components/ChannelList'
 import MessageList from './components/MessageList'
 import SearchPanel from './components/SearchPanel'
+import SqlConsole from './components/SqlConsole'
 import FreshnessFooter from './components/FreshnessFooter'
 import './App.css'
 
@@ -104,7 +105,15 @@ function AppContent() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null)
   const [targetMessageId, setTargetMessageId] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [sqlOpen, setSqlOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useAction('nav:sql', {
+    label: 'SQL console',
+    group: 'Navigation',
+    keywords: ['sql', 'query', 'console', 'database'],
+    handler: () => setSqlOpen(s => !s),
+  })
 
   const lookup = useMemo(() => ({
     channels: new Map(channels.map(c => [c.id, c])),
@@ -210,6 +219,12 @@ function AppContent() {
             </div>
             <button
               className="search-toggle"
+              onClick={() => setSqlOpen(s => !s)}
+            >
+              SQL
+            </button>
+            <button
+              className="search-toggle"
               onClick={toggleSearch}
             >
               Search
@@ -227,6 +242,7 @@ function AppContent() {
               <div className="no-channel">Select a channel to view messages</div>
             )}
           </div>
+          <SqlConsole hidden={!sqlOpen} onClose={() => setSqlOpen(false)} />
           <SearchPanel
             inputRef={searchInputRef}
             hidden={!searchOpen}

@@ -101,3 +101,11 @@ export interface Meta {
   archive_db_url: string | null
   latest_sync: SyncRun | null
 }
+
+export interface SqlResult {
+  columns: string[]
+  rows: unknown[][]
+  row_count: number
+  truncated: boolean
+  elapsed_ms: number
+}
