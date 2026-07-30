@@ -308,6 +308,28 @@ def build_db(archive_dir, db_path):
             total_msgs += count
         err(f"  Threads: {len(thread_files)} files loaded")
 
+        # API-enumerated thread metadata (archive.py writes threads/index.json).
+        # Starter-message stubs only cover threads whose starter was archived
+        # after thread creation; this covers the rest, and being fresher it
+        # overwrites stub-derived rows.
+        index_file = threads_dir / "index.json"
+        if index_file.exists():
+            thread_index = json.loads(index_file.read_text())
+            for tid, th in thread_index.items():
+                meta = th.get("thread_metadata", {})
+                cur.execute(
+                    """INSERT OR REPLACE INTO threads
+                       (id, parent_message_id, parent_channel_id, name,
+                        message_count, member_count, archived, locked)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        tid, tid, th.get("parent_id"), th.get("name"),
+                        th.get("message_count"), th.get("member_count"),
+                        int(meta.get("archived", False)), int(meta.get("locked", False)),
+                    ),
+                )
+            err(f"  threads/index.json: {len(thread_index)} metadata rows")
+
     # Populate FTS index for existing rows
     cur.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
 

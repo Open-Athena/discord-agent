@@ -425,6 +425,18 @@ async def run(guild_id, out_dir, download_att, fetch_threads, backfill_att=False
                     thread_ids[tid] = (existing_names[tid], ttype)
             err(f"\nFound {len(thread_ids)} threads to archive ({n_stub} via starter stubs, {len(thread_ids) - n_stub} API-only)")
 
+            # Persist full thread objects for build_db.py's `threads` table
+            # (starter-message stubs don't exist for API-only threads).
+            # Merged with the previous index so deleted threads keep their
+            # last-known metadata. Skipped by name everywhere JSON message
+            # files are globbed.
+            index_file = threads_dir / "index.json"
+            thread_index = json.loads(index_file.read_text()) if index_file.exists() else {}
+            for th in api_threads:
+                if th.get("parent_id") in parent_ids:
+                    thread_index[th["id"]] = th
+            index_file.write_text(json.dumps(thread_index, indent=2) + "\n")
+
             thread_new = 0
             thread_att = 0
             for thread_id, (thread_name, thread_type) in sorted(thread_ids.items()):
