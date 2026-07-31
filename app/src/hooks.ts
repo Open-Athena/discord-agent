@@ -47,6 +47,10 @@ export function useMeta() {
     // Poll every 60s so new CFW/GHA sync_runs show up without a reload.
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
+    // Override the app-wide `false`: polling pauses while the tab is hidden,
+    // so a tab reopened after hours must refetch immediately or the footer
+    // shows a long-stale "Synced Nh ago" until the next interval fires.
+    refetchOnWindowFocus: true,
   })
 }
 

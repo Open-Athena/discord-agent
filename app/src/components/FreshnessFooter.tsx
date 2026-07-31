@@ -33,13 +33,23 @@ function useArchiveDbInfo(url: string | null) {
   useEffect(() => {
     if (!url) return
     let cancelled = false
-    fetch(url, { method: 'HEAD' }).then(async res => {
-      if (cancelled || !res.ok) return
-      const size = parseInt(res.headers.get('content-length') || '0', 10)
-      const lastModified = res.headers.get('last-modified')
-      setInfo({ size, lastModified })
-    }).catch(() => {})
-    return () => { cancelled = true }
+    const probe = () => {
+      fetch(url, { method: 'HEAD' }).then(async res => {
+        if (cancelled || !res.ok) return
+        const size = parseInt(res.headers.get('content-length') || '0', 10)
+        const lastModified = res.headers.get('last-modified')
+        setInfo({ size, lastModified })
+      }).catch(() => {})
+    }
+    probe()
+    // Re-probe when the tab comes back into view — the file updates hourly,
+    // so an idle tab's size/age annotation goes stale.
+    const onVisible = () => { if (document.visibilityState === 'visible') probe() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [url])
   return info
 }
